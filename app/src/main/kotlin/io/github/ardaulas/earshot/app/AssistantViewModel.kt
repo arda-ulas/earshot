@@ -2,9 +2,11 @@ package io.github.ardaulas.earshot.app
 
 import android.app.Application
 import android.os.Build
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.ardaulas.earshot.core.interpret.LmInterpreter
+import io.github.ardaulas.earshot.core.interpret.LmWireFormat
 import io.github.ardaulas.earshot.core.interpret.RuleInterpreter
 import io.github.ardaulas.earshot.core.model.AssistantStatus
 import io.github.ardaulas.earshot.core.model.ModelGate
@@ -24,6 +26,7 @@ import io.github.ardaulas.earshot.core.vehicle.DrivingScenario
 import io.github.ardaulas.earshot.core.vehicle.DrivingStateResolver
 import io.github.ardaulas.earshot.core.vehicle.Gear
 import io.github.ardaulas.earshot.core.vehicle.SimulatedVehicleGateway
+import io.github.ardaulas.earshot.llama.LlamaLmEngine
 import io.github.ardaulas.earshot.whisper.WhisperSpeechEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -95,6 +98,8 @@ class AssistantViewModel(
 
     private var engine: TurnEngine? = null
     private var speech: WhisperSpeechEngine? = null
+    private var llm: LlamaLmEngine? = null
+    private var warmup: Job? = null
     private var turnJob: Job? = null
 
     private val _state = MutableStateFlow(UiState())
@@ -162,8 +167,16 @@ class AssistantViewModel(
                     return
                 }
                 speech = loaded
-                val lm: LmInterpreter? = null
-                val lmNote = status.lmProblem ?: "Language-model fallback is not part of this build yet."
+                val lmFile = status.lm
+                val lmEngine = lmFile?.let { withContext(Dispatchers.IO) { LlamaLmEngine.load(it) } }
+                llm = lmEngine
+                val lmNote =
+                    when {
+                        lmFile == null -> "fallback off. ${status.lmProblem}"
+                        lmEngine == null -> "fallback off. ${lmFile.name} could not be loaded."
+                        else -> "${lmFile.name}, fallback for indirect requests (always confirmed)."
+                    }
+                val lm = lmEngine?.let { LmInterpreter(it) }
                 engine =
                     TurnEngine(
                         speech = loaded,
@@ -177,6 +190,22 @@ class AssistantViewModel(
                         traceSink = traces,
                     )
                 _state.update { it.copy(models = ModelStatus.Ready(status.stt.name, lmNote)) }
+                // Decode the fixed system prompt and examples once, so the first real request is fast.
+                lmEngine?.let { engine ->
+                    warmup =
+                        viewModelScope.launch {
+                            runCatching {
+                                engine.complete(
+                                    LmWireFormat.SYSTEM_PROMPT,
+                                    LmWireFormat.EXAMPLES,
+                                    "hello",
+                                    LmWireFormat.GRAMMAR,
+                                    1,
+                                    LmWireFormat.ASSISTANT_PREFIX,
+                                )
+                            }.onFailure { e -> Log.w(TAG, "language-model warm-up failed", e) }
+                        }
+                }
             }
         }
     }
@@ -273,9 +302,14 @@ class AssistantViewModel(
 
     override fun onCleared() {
         speaker.shutdown()
-        // The scope is already cancelled; wait for an aborted native call to return before freeing it.
-        runBlocking { turnJob?.join() }
+        // The scope is already cancelled; wait for aborted native calls (a turn, the language-model
+        // warm-up) to return before freeing the engines.
+        runBlocking {
+            turnJob?.join()
+            warmup?.join()
+        }
         speech?.close()
+        llm?.close()
     }
 
     private fun isEmulator(): Boolean =
@@ -287,5 +321,6 @@ class AssistantViewModel(
 
     private companion object {
         const val TICK_MS = 200L
+        const val TAG = "earshot"
     }
 }

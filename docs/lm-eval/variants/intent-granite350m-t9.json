@@ -1,0 +1,41 @@
+{
+ "name": "intent-granite350m-t9",
+ "model": "models/granite-4.0-350m-q4_0.gguf",
+ "format": "intent",
+ "system": "You sort what a driver says into one intent for the car's climate assistant. Reply only with JSON like {\"intent\":\"out_of_domain\"}.\nThe assistant controls only cabin temperature, air conditioning and defrost, and can tell the speed, the gear and the climate setting.\nIntents:\n- out_of_domain: everything else. Other car features (windows, seats, doors, locks, lights, wipers, media, navigation, phone) are out_of_domain, and so is anything not about the car. If unsure, answer out_of_domain.\n- warmer: the driver feels cold.\n- cooler: the driver feels hot.\n- ac_on, ac_off: switch the air conditioning on or off.\n- defrost_front_on: the windshield is fogged or iced.\n- defrost_rear_on: the rear window is fogged or iced.\n- query_speed: asks about the car's speed.\n- query_gear: asks which gear the car is in.\n- query_cabin: asks about the climate setting.",
+ "examples": [
+  [
+   "turn on the headlights",
+   "{\"intent\":\"out_of_domain\"}"
+  ],
+  [
+   "I'm freezing",
+   "{\"intent\":\"warmer\"}"
+  ],
+  [
+   "what time is it",
+   "{\"intent\":\"out_of_domain\"}"
+  ],
+  [
+   "I can't see out the windshield",
+   "{\"intent\":\"defrost_front_on\"}"
+  ],
+  [
+   "fold in the mirrors",
+   "{\"intent\":\"out_of_domain\"}"
+  ],
+  [
+   "send a text to Alex",
+   "{\"intent\":\"out_of_domain\"}"
+  ],
+  [
+   "the sun is beating down on me",
+   "{\"intent\":\"cooler\"}"
+  ],
+  [
+   "what's the weather like",
+   "{\"intent\":\"out_of_domain\"}"
+  ]
+ ],
+ "grammar": "root ::= \"{\\\"intent\\\":\\\"\" intent \"\\\"}\"\nintent ::= \"warmer\" | \"cooler\" | \"ac_on\" | \"ac_off\" | \"defrost_front_on\" | \"defrost_rear_on\" | \"query_speed\" | \"query_gear\" | \"query_cabin\" | \"out_of_domain\"\n"
+}

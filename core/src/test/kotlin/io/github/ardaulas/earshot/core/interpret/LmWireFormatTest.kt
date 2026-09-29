@@ -1,12 +1,15 @@
 package io.github.ardaulas.earshot.core.interpret
 
-import io.github.ardaulas.earshot.core.command.Bounds
 import io.github.ardaulas.earshot.core.command.Command
 import io.github.ardaulas.earshot.core.command.Window
+import io.github.ardaulas.earshot.core.interpret.LmWireFormat.Intent
+import io.github.ardaulas.earshot.core.policy.Category
+import io.github.ardaulas.earshot.core.policy.category
 import io.github.ardaulas.earshot.core.requirements.Verifies
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.property.Arb
+import io.kotest.property.arbitrary.element
 import io.kotest.property.arbitrary.string
 import io.kotest.property.checkAll
 import kotlinx.coroutines.test.runTest
@@ -22,152 +25,94 @@ class LmWireFormatTest {
     }
 
     @Test
-    fun `parses every valid set_temp shape`() {
-        for (celsius in Bounds.TEMP_C) {
-            LmWireFormat.parse("""{"cmd":"set_temp","celsius":$celsius}""") shouldBe Command.SetTemp(celsius)
-        }
+    fun `each label maps to exactly one fixed command`() {
+        LmWireFormat.parse("""{"intent":"warmer"}""") shouldBe Command.AdjustTemp(+2)
+        LmWireFormat.parse("""{"intent":"cooler"}""") shouldBe Command.AdjustTemp(-2)
+        LmWireFormat.parse("""{"intent":"ac_on"}""") shouldBe Command.SetAc(true)
+        LmWireFormat.parse("""{"intent":"ac_off"}""") shouldBe Command.SetAc(false)
+        LmWireFormat.parse("""{"intent":"defrost_front_on"}""") shouldBe Command.SetDefrost(Window.FRONT, true)
+        LmWireFormat.parse("""{"intent":"defrost_rear_on"}""") shouldBe Command.SetDefrost(Window.REAR, true)
+        LmWireFormat.parse("""{"intent":"query_speed"}""") shouldBe Command.QuerySpeed
+        LmWireFormat.parse("""{"intent":"query_gear"}""") shouldBe Command.QueryGear
+        LmWireFormat.parse("""{"intent":"query_cabin"}""") shouldBe Command.QueryCabin
+        LmWireFormat.parse("""{"intent":"out_of_domain"}""") shouldBe Command.OutOfDomain
+        Intent.entries
+            .map { it.label }
+            .toSet()
+            .size shouldBe Intent.entries.size
     }
 
     @Test
-    fun `parses every valid adjust_temp shape`() {
-        val deltas = Bounds.TEMP_DELTA.map { -it } + Bounds.TEMP_DELTA.toList()
-        for (delta in deltas) {
-            LmWireFormat.parse("""{"cmd":"adjust_temp","delta":$delta}""") shouldBe Command.AdjustTemp(delta)
+    @Verifies("SR-8", "SR-10")
+    fun `no label can produce a conversation, screen or visibility-reducing command`() {
+        for (intent in Intent.entries) {
+            val category = intent.command.category(frontDefrostOn = true)
+            (category in setOf(Category.COMFORT, Category.QUERY, Category.OUT_OF_DOMAIN)) shouldBe true
         }
-    }
-
-    @Test
-    fun `parses every valid set_fan shape`() {
-        for (level in Bounds.FAN_LEVEL) {
-            LmWireFormat.parse("""{"cmd":"set_fan","level":$level}""") shouldBe Command.SetFan(level)
-        }
-    }
-
-    @Test
-    fun `parses every valid set_defrost shape`() {
-        for (window in listOf("front" to Window.FRONT, "rear" to Window.REAR)) {
-            for (on in listOf(true, false)) {
-                LmWireFormat.parse("""{"cmd":"set_defrost","window":"${window.first}","on":$on}""") shouldBe
-                    Command.SetDefrost(window.second, on)
-            }
-        }
-    }
-
-    @Test
-    fun `parses every valid set_ac shape`() {
-        for (on in listOf(true, false)) {
-            LmWireFormat.parse("""{"cmd":"set_ac","on":$on}""") shouldBe Command.SetAc(on)
-        }
-    }
-
-    @Test
-    fun `parses the no-argument commands`() {
-        LmWireFormat.parse("""{"cmd":"query_speed"}""") shouldBe Command.QuerySpeed
-        LmWireFormat.parse("""{"cmd":"query_gear"}""") shouldBe Command.QueryGear
-        LmWireFormat.parse("""{"cmd":"query_cabin"}""") shouldBe Command.QueryCabin
-        LmWireFormat.parse("""{"cmd":"out_of_domain"}""") shouldBe Command.OutOfDomain
     }
 
     @Test
     fun `rejects whitespace inside the object`() {
-        LmWireFormat.parse("""{"cmd": "set_temp","celsius":21}""") shouldBe null
-        LmWireFormat.parse("""{"cmd":"set_temp", "celsius":21}""") shouldBe null
-        LmWireFormat.parse("""{ "cmd":"query_speed"}""") shouldBe null
-        LmWireFormat.parse("""{"cmd":"query_speed" }""") shouldBe null
+        LmWireFormat.parse("""{"intent": "warmer"}""") shouldBe null
+        LmWireFormat.parse("""{ "intent":"warmer"}""") shouldBe null
+        LmWireFormat.parse("""{"intent":"warmer" }""") shouldBe null
     }
 
     @Test
-    fun `tolerates surrounding whitespace, it is trimmed before matching`() {
-        LmWireFormat.parse(" {\"cmd\":\"query_speed\"}\n") shouldBe Command.QuerySpeed
-    }
-
-    @Test
-    fun `rejects extra keys`() {
-        LmWireFormat.parse("""{"cmd":"set_temp","celsius":21,"extra":1}""") shouldBe null
-        LmWireFormat.parse("""{"cmd":"query_speed","extra":1}""") shouldBe null
-    }
-
-    @Test
-    fun `rejects out-of-range values`() {
-        LmWireFormat.parse("""{"cmd":"set_temp","celsius":40}""") shouldBe null
-        LmWireFormat.parse("""{"cmd":"adjust_temp","delta":0}""") shouldBe null
-        LmWireFormat.parse("""{"cmd":"adjust_temp","delta":5}""") shouldBe null
-        LmWireFormat.parse("""{"cmd":"set_fan","level":6}""") shouldBe null
-    }
-
-    @Test
-    fun `rejects the wrong key for a command`() {
-        LmWireFormat.parse("""{"cmd":"set_temp","level":21}""") shouldBe null
-        LmWireFormat.parse("""{"cmd":"set_fan","celsius":3}""") shouldBe null
-    }
-
-    @Test
-    fun `rejects set_defrost without a window`() {
-        LmWireFormat.parse("""{"cmd":"set_defrost","on":true}""") shouldBe null
-    }
-
-    @Test
-    fun `rejects an unknown command`() {
-        LmWireFormat.parse("""{"cmd":"open_trunk"}""") shouldBe null
+    fun `tolerates surrounding whitespace only`() {
+        LmWireFormat.parse(" {\"intent\":\"warmer\"}\n") shouldBe Command.AdjustTemp(+2)
     }
 
     @Test
     @Verifies("SR-10")
-    fun `rejects cancel, help, yes-no and screen commands - they have no wire form`() {
-        LmWireFormat.parse("""{"cmd":"cancel"}""") shouldBe null
-        LmWireFormat.parse("""{"cmd":"help"}""") shouldBe null
-        LmWireFormat.parse("""{"cmd":"yes"}""") shouldBe null
-        LmWireFormat.parse("""{"cmd":"no"}""") shouldBe null
-        LmWireFormat.parse("""{"cmd":"show_climate"}""") shouldBe null
+    fun `rejects unknown labels, including ones for commands the model must not produce`() {
+        for (label in listOf("cancel", "help", "yes", "no", "show_climate", "defrost_front_off", "fan_off", "set_temp", "open_trunk", "")) {
+            LmWireFormat.parse("""{"intent":"$label"}""") shouldBe null
+        }
     }
 
     @Test
-    fun `rejects trailing text, two objects and the empty string`() {
-        LmWireFormat.parse("""{"cmd":"query_speed"}x""") shouldBe null
-        LmWireFormat.parse("""{"cmd":"query_speed"}{"cmd":"query_gear"}""") shouldBe null
+    fun `rejects the old command shape, extra keys, trailing text and multiple objects`() {
+        LmWireFormat.parse("""{"cmd":"adjust_temp","delta":2}""") shouldBe null
+        LmWireFormat.parse("""{"intent":"warmer","delta":4}""") shouldBe null
+        LmWireFormat.parse("""{"intent":"warmer"}x""") shouldBe null
+        LmWireFormat.parse("""{"intent":"warmer"}{"intent":"cooler"}""") shouldBe null
+        LmWireFormat.parse("""{"intent":"WARMER"}""") shouldBe null
         LmWireFormat.parse("") shouldBe null
     }
 
     @Test
-    fun `grammar contains every in-bounds celsius value and excludes its neighbours`() {
-        val celsiusLine = LmWireFormat.GRAMMAR.lines().first { it.startsWith("celsius ::=") }
-        for (c in Bounds.TEMP_C) {
-            celsiusLine shouldContainQuoted c
-        }
-        celsiusLine shouldNotContainQuoted (Bounds.TEMP_C.first - 1)
-        celsiusLine shouldNotContainQuoted (Bounds.TEMP_C.last + 1)
+    fun `grammar lists every label and nothing else`() {
+        val intentLine = LmWireFormat.GRAMMAR.lines().first { it.startsWith("intent ::= ") }
+        val labels = Regex("\"([a-z_]+)\"").findAll(intentLine).map { it.groupValues[1] }.toList()
+        labels shouldBe Intent.entries.map { it.label }
     }
 
     @Test
-    fun `grammar deltas exclude zero`() {
-        val deltaLine = LmWireFormat.GRAMMAR.lines().first { it.startsWith("delta ::=") }
-        deltaLine shouldNotContainQuoted 0
-        for (d in Bounds.TEMP_DELTA) {
-            deltaLine shouldContainQuoted d
-            deltaLine shouldContainQuoted (-d)
+    fun `system prompt names every label`() {
+        for (intent in Intent.entries) {
+            LmWireFormat.SYSTEM_PROMPT.contains(intent.label) shouldBe true
         }
     }
 
-    private infix fun String.shouldContainQuoted(value: Int) {
-        (this.contains("\"$value\"")) shouldBe true
-    }
-
-    private infix fun String.shouldNotContainQuoted(value: Int) {
-        (this.contains("\"$value\"")) shouldBe false
+    @Test
+    fun `grammar has one rule per line, since llama cpp ends a top-level rule at a newline`() {
+        val lines = LmWireFormat.GRAMMAR.trim().lines()
+        lines.map { it.substringBefore(" ::= ") } shouldBe listOf("root", "intent")
+        lines.all { " ::= " in it } shouldBe true
     }
 
     @Test
-    @Verifies("SR-9")
-    fun `parse never throws and any result is within bounds`() =
+    fun `parse never throws on arbitrary strings`() =
         runTest {
-            checkAll(Arb.string(0, 80)) { s ->
-                val command = LmWireFormat.parse(s)
-                when (command) {
-                    is Command.SetTemp -> (command.celsius in Bounds.TEMP_C) shouldBe true
-                    is Command.AdjustTemp -> (kotlin.math.abs(command.delta) in Bounds.TEMP_DELTA) shouldBe true
-                    is Command.SetFan -> (command.level in Bounds.FAN_LEVEL) shouldBe true
-                    else -> Unit
-                }
+            checkAll(Arb.string(0, 80)) { s -> LmWireFormat.parse(s) }
+        }
+
+    @Test
+    fun `parse accepts exactly the wire form of each label`() =
+        runTest {
+            checkAll(Arb.element(Intent.entries)) { intent ->
+                LmWireFormat.parse(LmWireFormat.wire(intent)) shouldBe intent.command
             }
         }
 }

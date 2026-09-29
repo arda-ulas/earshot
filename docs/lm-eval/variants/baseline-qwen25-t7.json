@@ -1,0 +1,37 @@
+{
+ "name": "baseline-qwen25-t7",
+ "model": "models/qwen2.5-0.5b-instruct-q4_0.gguf",
+ "format": "command",
+ "system": "You handle only the car's climate controls and questions about speed, gear and cabin temperature. Reply with exactly one of these JSON lines and nothing else:\nnot about climate, speed or gear: {\"cmd\":\"out_of_domain\"}\nsomeone feels cold, chilly or freezing: {\"cmd\":\"adjust_temp\",\"delta\":2}\nsomeone feels hot, or the air should be cooler or drier (air conditioning): {\"cmd\":\"set_ac\",\"on\":true}\nwindshield fogged or frosted: {\"cmd\":\"set_defrost\",\"window\":\"front\",\"on\":true}\nrear window fogged or frosted: {\"cmd\":\"set_defrost\",\"window\":\"rear\",\"on\":true}\nasks about the car's speed or how fast it is moving: {\"cmd\":\"query_speed\"}\nasks which gear the car is in, or whether it is in a given gear such as park or drive: {\"cmd\":\"query_gear\"}\nasks about the cabin temperature or climate setting: {\"cmd\":\"query_cabin\"}\nOther car features (windows, seats, doors, locks, lights, media, navigation, phone) and all other requests are out_of_domain.",
+ "examples": [
+  [
+   "I'm freezing",
+   "{\"cmd\":\"adjust_temp\",\"delta\":2}"
+  ],
+  [
+   "turn on the headlights",
+   "{\"cmd\":\"out_of_domain\"}"
+  ],
+  [
+   "the sun is beating down on me",
+   "{\"cmd\":\"set_ac\",\"on\":true}"
+  ],
+  [
+   "set a reminder for 5 pm",
+   "{\"cmd\":\"out_of_domain\"}"
+  ],
+  [
+   "I can't see out the windshield",
+   "{\"cmd\":\"set_defrost\",\"window\":\"front\",\"on\":true}"
+  ],
+  [
+   "which gear is the car in",
+   "{\"cmd\":\"query_gear\"}"
+  ],
+  [
+   "what's the weather like",
+   "{\"cmd\":\"out_of_domain\"}"
+  ]
+ ],
+ "grammar": "root ::= \"{\\\"cmd\\\":\\\"\" cmd \"}\"\ncmd ::= \"set_temp\\\",\\\"celsius\\\":\" celsius | \"adjust_temp\\\",\\\"delta\\\":\" delta | \"set_fan\\\",\\\"level\\\":\" level | \"set_defrost\\\",\\\"window\\\":\\\"\" window \"\\\",\\\"on\\\":\" bool | \"set_ac\\\",\\\"on\\\":\" bool | \"query_speed\\\"\" | \"query_gear\\\"\" | \"query_cabin\\\"\" | \"out_of_domain\\\"\"\ncelsius ::= \"16\" | \"17\" | \"18\" | \"19\" | \"20\" | \"21\" | \"22\" | \"23\" | \"24\" | \"25\" | \"26\" | \"27\" | \"28\"\ndelta ::= \"-4\" | \"-3\" | \"-2\" | \"-1\" | \"1\" | \"2\" | \"3\" | \"4\"\nlevel ::= \"0\" | \"1\" | \"2\" | \"3\" | \"4\" | \"5\"\nwindow ::= \"front\" | \"rear\"\nbool ::= \"true\" | \"false\"\n"
+}

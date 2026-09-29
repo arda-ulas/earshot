@@ -13,7 +13,8 @@ data class Example(
 interface LmEngine {
     /**
      * Completes one user turn after [system] and [examples], with output constrained by the GBNF
-     * [grammar]. Returns the raw generated text.
+     * [grammar]. [assistantPrefix] is appended after the assistant turn marker (model-specific, may be
+     * empty). Returns the raw generated text.
      */
     suspend fun complete(
         system: String,
@@ -21,5 +22,6 @@ interface LmEngine {
         user: String,
         grammar: String,
         maxTokens: Int,
+        assistantPrefix: String = "",
     ): String
 }

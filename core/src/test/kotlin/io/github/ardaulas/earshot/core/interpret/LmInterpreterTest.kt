@@ -32,14 +32,19 @@ private class FakeLmEngine(
     var lastUser: String? = null
         private set
 
+    var lastAssistantPrefix: String? = null
+        private set
+
     override suspend fun complete(
         system: String,
         examples: List<Example>,
         user: String,
         grammar: String,
         maxTokens: Int,
+        assistantPrefix: String,
     ): String {
         lastUser = user
+        lastAssistantPrefix = assistantPrefix
         return when (val b = behavior) {
             is Behavior.Returns -> {
                 b.text
@@ -62,9 +67,9 @@ class LmInterpreterTest {
     @Test
     fun `valid model output parses`() =
         runTest {
-            val engine = FakeLmEngine(FakeLmEngine.Behavior.Returns("""{"cmd":"query_speed"}"""))
+            val engine = FakeLmEngine(FakeLmEngine.Behavior.Returns("""{"intent":"query_speed"}"""))
             val result = LmInterpreter(engine).interpret("how fast am I going")
-            result shouldBe LmOutcome.Parsed(Command.QuerySpeed, """{"cmd":"query_speed"}""")
+            result shouldBe LmOutcome.Parsed(Command.QuerySpeed, """{"intent":"query_speed"}""")
         }
 
     @Test
@@ -119,9 +124,17 @@ class LmInterpreterTest {
     @Test
     fun `input is truncated to MAX_INPUT_CHARS before it reaches the engine`() =
         runTest {
-            val engine = FakeLmEngine(FakeLmEngine.Behavior.Returns("""{"cmd":"out_of_domain"}"""))
+            val engine = FakeLmEngine(FakeLmEngine.Behavior.Returns("""{"intent":"out_of_domain"}"""))
             val longText = "a".repeat(LmInterpreter.MAX_INPUT_CHARS + 50)
             LmInterpreter(engine).interpret(longText)
             engine.lastUser?.length shouldBe LmInterpreter.MAX_INPUT_CHARS
+        }
+
+    @Test
+    fun `the model-specific assistant prefix is passed to the engine`() =
+        runTest {
+            val engine = FakeLmEngine(FakeLmEngine.Behavior.Returns("""{"intent":"warmer"}"""))
+            LmInterpreter(engine).interpret("I'm cold") shouldBe LmOutcome.Parsed(Command.AdjustTemp(+2), """{"intent":"warmer"}""")
+            engine.lastAssistantPrefix shouldBe LmWireFormat.ASSISTANT_PREFIX
         }
 }

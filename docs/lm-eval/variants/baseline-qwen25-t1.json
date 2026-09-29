@@ -1,0 +1,41 @@
+{
+ "name": "baseline-qwen25-t1",
+ "model": "models/qwen2.5-0.5b-instruct-q4_0.gguf",
+ "format": "command",
+ "system": "You control only the car's climate system. Turn the driver's words into one JSON command. Output only the JSON, no spaces.\nCommands:\nadjust_temp: the driver feels cold (delta 2) or feels hot (delta -2).\nset_temp: only when the driver says a number of degrees (celsius 16-28).\nset_ac: air conditioning on or off. It cools and dries the air.\nset_fan: fan level 0-5.\nset_defrost: clears mist from the front windshield or the rear window.\nquery_speed: asks how fast the car is going.\nquery_gear: asks which gear the car is in.\nquery_cabin: asks for the current temperature setting.\nout_of_domain: everything else. Windows, seats, doors, locks, lights, media, navigation, phone, and anything that is not the climate system are out_of_domain.",
+ "examples": [
+  [
+   "I'm freezing",
+   "{\"cmd\":\"adjust_temp\",\"delta\":2}"
+  ],
+  [
+   "turn on the headlights",
+   "{\"cmd\":\"out_of_domain\"}"
+  ],
+  [
+   "the sun is beating down on me",
+   "{\"cmd\":\"adjust_temp\",\"delta\":-2}"
+  ],
+  [
+   "set a reminder for 5 pm",
+   "{\"cmd\":\"out_of_domain\"}"
+  ],
+  [
+   "I can't see out the windshield",
+   "{\"cmd\":\"set_defrost\",\"window\":\"front\",\"on\":true}"
+  ],
+  [
+   "what's the cabin temperature",
+   "{\"cmd\":\"query_cabin\"}"
+  ],
+  [
+   "fold in the mirrors",
+   "{\"cmd\":\"out_of_domain\"}"
+  ],
+  [
+   "what's the weather like",
+   "{\"cmd\":\"out_of_domain\"}"
+  ]
+ ],
+ "grammar": "root ::= \"{\\\"cmd\\\":\\\"\" cmd \"}\"\ncmd ::= \"set_temp\\\",\\\"celsius\\\":\" celsius | \"adjust_temp\\\",\\\"delta\\\":\" delta | \"set_fan\\\",\\\"level\\\":\" level | \"set_defrost\\\",\\\"window\\\":\\\"\" window \"\\\",\\\"on\\\":\" bool | \"set_ac\\\",\\\"on\\\":\" bool | \"query_speed\\\"\" | \"query_gear\\\"\" | \"query_cabin\\\"\" | \"out_of_domain\\\"\"\ncelsius ::= \"16\" | \"17\" | \"18\" | \"19\" | \"20\" | \"21\" | \"22\" | \"23\" | \"24\" | \"25\" | \"26\" | \"27\" | \"28\"\ndelta ::= \"-4\" | \"-3\" | \"-2\" | \"-1\" | \"1\" | \"2\" | \"3\" | \"4\"\nlevel ::= \"0\" | \"1\" | \"2\" | \"3\" | \"4\" | \"5\"\nwindow ::= \"front\" | \"rear\"\nbool ::= \"true\" | \"false\"\n"
+}

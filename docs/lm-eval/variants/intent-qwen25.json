@@ -1,0 +1,21 @@
+{
+ "name": "intent-qwen25",
+ "model": "models/qwen2.5-0.5b-instruct-q4_0.gguf",
+ "format": "intent",
+ "system": "You map a driver's indirect request to one cabin-climate intent. Output only JSON like {\"intent\":\"warmer\"}.\nIntents: warmer (driver is cold), cooler (driver is hot), ac_on, ac_off, defrost_front_on (windshield fogged), defrost_rear_on (rear window fogged), query_speed, query_gear, query_cabin (asks about the climate setting), out_of_domain (anything else).\nOnly the cabin temperature, air conditioning, defrost, speed, gear and climate settings are in scope. Everything else is out_of_domain.",
+ "examples": [
+  [
+   "I'm freezing",
+   "{\"intent\":\"warmer\"}"
+  ],
+  [
+   "I can't see out the windshield",
+   "{\"intent\":\"defrost_front_on\"}"
+  ],
+  [
+   "what's the weather like",
+   "{\"intent\":\"out_of_domain\"}"
+  ]
+ ],
+ "grammar": "root ::= \"{\\\"intent\\\":\\\"\" intent \"\\\"}\"\nintent ::= \"warmer\" | \"cooler\" | \"ac_on\" | \"ac_off\" | \"defrost_front_on\" | \"defrost_rear_on\" | \"query_speed\" | \"query_gear\" | \"query_cabin\" | \"out_of_domain\"\n"
+}
