@@ -22,3 +22,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "earshot"
 include(":core")
+include(":native:whisper")
