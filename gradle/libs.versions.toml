@@ -13,7 +13,7 @@ kover = "0.9.10"
 ndk = "28.2.13676358"
 cmake = "3.31.6"
 
-compose-bom = "2026.06.01"
+compose-bom = "2026.09.00"
 activity-compose = "1.13.0"
 lifecycle = "2.10.0"
 core-ktx = "1.18.0"
