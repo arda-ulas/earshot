@@ -1,0 +1,41 @@
+{
+ "name": "baseline-granite350m-t11",
+ "model": "models/granite-4.0-350m-q4_0.gguf",
+ "format": "command",
+ "system": "You are the climate controller of a car. Reply to the driver with one JSON command and nothing else.\nIf the driver is cold: {\"cmd\":\"adjust_temp\",\"delta\":2}\nIf the driver is hot or the air is unpleasant: {\"cmd\":\"set_ac\",\"on\":true} (never adjust_temp)\nIf the windshield has condensation: {\"cmd\":\"set_defrost\",\"window\":\"front\",\"on\":true}\nIf the rear window has condensation: {\"cmd\":\"set_defrost\",\"window\":\"rear\",\"on\":true}\nIf the driver asks how fast the car is going: {\"cmd\":\"query_speed\"}\nIf the driver asks which gear the car is in: {\"cmd\":\"query_gear\"}\nIf the driver asks about the current temperature setting: {\"cmd\":\"query_cabin\"}\nOtherwise: {\"cmd\":\"out_of_domain\"}. This includes other car features (opening or closing windows, seats, doors, locks, lights, trunk), media, navigation, phone, shopping, other questions and small talk.",
+ "examples": [
+  [
+   "I'm freezing",
+   "{\"cmd\":\"adjust_temp\",\"delta\":2}"
+  ],
+  [
+   "I'm sitting in direct sunlight",
+   "{\"cmd\":\"set_ac\",\"on\":true}"
+  ],
+  [
+   "I can't see out the windshield",
+   "{\"cmd\":\"set_defrost\",\"window\":\"front\",\"on\":true}"
+  ],
+  [
+   "what's the weather like",
+   "{\"cmd\":\"out_of_domain\"}"
+  ],
+  [
+   "turn on the headlights",
+   "{\"cmd\":\"out_of_domain\"}"
+  ],
+  [
+   "turn up the volume",
+   "{\"cmd\":\"out_of_domain\"}"
+  ],
+  [
+   "how much fuel do I have",
+   "{\"cmd\":\"out_of_domain\"}"
+  ],
+  [
+   "close the trunk",
+   "{\"cmd\":\"out_of_domain\"}"
+  ]
+ ],
+ "grammar": "root ::= \"{\\\"cmd\\\":\\\"\" cmd \"}\"\ncmd ::= \"set_temp\\\",\\\"celsius\\\":\" celsius | \"adjust_temp\\\",\\\"delta\\\":\" delta | \"set_fan\\\",\\\"level\\\":\" level | \"set_defrost\\\",\\\"window\\\":\\\"\" window \"\\\",\\\"on\\\":\" bool | \"set_ac\\\",\\\"on\\\":\" bool | \"query_speed\\\"\" | \"query_gear\\\"\" | \"query_cabin\\\"\" | \"out_of_domain\\\"\"\ncelsius ::= \"16\" | \"17\" | \"18\" | \"19\" | \"20\" | \"21\" | \"22\" | \"23\" | \"24\" | \"25\" | \"26\" | \"27\" | \"28\"\ndelta ::= \"-4\" | \"-3\" | \"-2\" | \"-1\" | \"1\" | \"2\" | \"3\" | \"4\"\nlevel ::= \"0\" | \"1\" | \"2\" | \"3\" | \"4\" | \"5\"\nwindow ::= \"front\" | \"rear\"\nbool ::= \"true\" | \"false\"\n"
+}

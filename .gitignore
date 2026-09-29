@@ -33,3 +33,6 @@ traces/
 *.jks
 *.keystore
 keystore.properties
+docs/lm-eval/lmhost/build/
+docs/lm-eval/results/*.spec
+docs/lm-eval/results/*.gbnf

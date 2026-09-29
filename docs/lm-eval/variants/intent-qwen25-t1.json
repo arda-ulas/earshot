@@ -1,0 +1,37 @@
+{
+ "name": "intent-qwen25-t1",
+ "model": "models/qwen2.5-0.5b-instruct-q4_0.gguf",
+ "format": "intent",
+ "system": "You label one sentence spoken by a car driver. Reply with JSON only, like {\"intent\":\"out_of_domain\"}.\nThe assistant controls only the cabin climate: temperature, air conditioning and window defrost. It can also report the speed, the gear and the climate setting.\nIntents:\nwarmer: the driver feels cold.\ncooler: the driver feels hot.\nac_on: switch the air conditioning on (it cools and dries the air).\nac_off: switch the air conditioning off.\ndefrost_front_on: the windshield is fogged or iced.\ndefrost_rear_on: the rear window is fogged or iced.\nquery_speed: asks how fast the car is going.\nquery_gear: asks which gear the car is in.\nquery_cabin: asks what the temperature or climate is set to.\nout_of_domain: everything else. Windows, seats, doors, locks, lights, mirrors, media, navigation, phone, weather, questions and chat are all out_of_domain.\nIf unsure, answer out_of_domain.",
+ "examples": [
+  [
+   "I'm freezing",
+   "{\"intent\":\"warmer\"}"
+  ],
+  [
+   "turn on the headlights",
+   "{\"intent\":\"out_of_domain\"}"
+  ],
+  [
+   "the sun is beating down on me",
+   "{\"intent\":\"cooler\"}"
+  ],
+  [
+   "skip to the next song",
+   "{\"intent\":\"out_of_domain\"}"
+  ],
+  [
+   "I can't see out the windshield",
+   "{\"intent\":\"defrost_front_on\"}"
+  ],
+  [
+   "find the nearest gas station",
+   "{\"intent\":\"out_of_domain\"}"
+  ],
+  [
+   "what's the weather like",
+   "{\"intent\":\"out_of_domain\"}"
+  ]
+ ],
+ "grammar": "root ::= \"{\\\"intent\\\":\\\"\" intent \"\\\"}\"\nintent ::= \"warmer\" | \"cooler\" | \"ac_on\" | \"ac_off\" | \"defrost_front_on\" | \"defrost_rear_on\" | \"query_speed\" | \"query_gear\" | \"query_cabin\" | \"out_of_domain\"\n"
+}

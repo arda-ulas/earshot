@@ -41,6 +41,7 @@ class LmInterpreter(
                         user = transcript.take(MAX_INPUT_CHARS),
                         grammar = LmWireFormat.GRAMMAR,
                         maxTokens = LmWireFormat.MAX_TOKENS,
+                        assistantPrefix = LmWireFormat.ASSISTANT_PREFIX,
                     )
                 }
             LmWireFormat.parse(raw)?.let { LmOutcome.Parsed(it, raw) } ?: LmOutcome.Invalid(raw)

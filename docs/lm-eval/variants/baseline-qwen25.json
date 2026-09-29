@@ -1,0 +1,21 @@
+{
+ "format": "command",
+ "system": "You turn a driver's spoken request into one JSON command for the cabin climate system. Output only the JSON, no spaces, no other text.\nCommands: set_temp (celsius 16-28), adjust_temp (delta -4 to 4, not 0), set_fan (level 0-5), set_defrost (window front or rear, on true or false), set_ac (on true or false), query_speed, query_gear, query_cabin.\nIf the request is not about cabin temperature, fan, air conditioning, defrost, speed, or gear, output {\"cmd\":\"out_of_domain\"}.",
+ "examples": [
+  [
+   "I'm freezing",
+   "{\"cmd\":\"adjust_temp\",\"delta\":2}"
+  ],
+  [
+   "I can't see out the windshield",
+   "{\"cmd\":\"set_defrost\",\"window\":\"front\",\"on\":true}"
+  ],
+  [
+   "what's the weather like",
+   "{\"cmd\":\"out_of_domain\"}"
+  ]
+ ],
+ "grammar": "root ::= \"{\\\"cmd\\\":\\\"\" cmd \"}\"\ncmd ::= \"set_temp\\\",\\\"celsius\\\":\" celsius | \"adjust_temp\\\",\\\"delta\\\":\" delta | \"set_fan\\\",\\\"level\\\":\" level | \"set_defrost\\\",\\\"window\\\":\\\"\" window \"\\\",\\\"on\\\":\" bool | \"set_ac\\\",\\\"on\\\":\" bool | \"query_speed\\\"\" | \"query_gear\\\"\" | \"query_cabin\\\"\" | \"out_of_domain\\\"\"\ncelsius ::= \"16\" | \"17\" | \"18\" | \"19\" | \"20\" | \"21\" | \"22\" | \"23\" | \"24\" | \"25\" | \"26\" | \"27\" | \"28\"\ndelta ::= \"-4\" | \"-3\" | \"-2\" | \"-1\" | \"1\" | \"2\" | \"3\" | \"4\"\nlevel ::= \"0\" | \"1\" | \"2\" | \"3\" | \"4\" | \"5\"\nwindow ::= \"front\" | \"rear\"\nbool ::= \"true\" | \"false\"\n",
+ "name": "baseline-qwen25",
+ "model": "models/qwen2.5-0.5b-instruct-q4_0.gguf"
+}
