@@ -242,13 +242,13 @@ class TurnEngineTest {
 
     @Test
     @Verifies("U9", "SR-18")
-    fun `U9 a confirmation expires after 8 seconds`() =
+    fun `U9 a confirmation expires after 10 seconds`() =
         runTest {
             val h = harness(DrivingState.MOVING)
             h.speech.queue("Turn off the defrost.", 0.9f)
             h.engine.handle(PCM, InputSource.CLIP)
 
-            testScheduler.advanceTimeBy(8_001)
+            testScheduler.advanceTimeBy(10_001)
 
             h.speech.queue("yes", 0.9f)
             val result = h.engine.handle(PCM, InputSource.CLIP)
@@ -256,6 +256,22 @@ class TurnEngineTest {
             result.spoken shouldBe Responses.CONFIRMATION_EXPIRED
             h.vehicle.writeCount shouldBe 0
             h.engine.isAwaitingConfirmation shouldBe false
+        }
+
+    @Test
+    @Verifies("U9", "SR-18")
+    fun `U9 expiry is measured to the end of the answer, so slow speech-to-text does not count`() =
+        runTest {
+            val h = harness(DrivingState.MOVING)
+            h.speech.queue("Turn off the defrost.", 0.9f)
+            h.engine.handle(PCM, InputSource.CLIP)
+
+            // The driver finishes saying "yes" at 9 s; recognizing it takes 3 s more.
+            testScheduler.advanceTimeBy(9_000)
+            h.speech.queue("yes", 0.9f, delayMs = 3_000)
+            val result = h.engine.handle(PCM, InputSource.CLIP)
+            result.outcome shouldBe Outcome.ACTED
+            h.vehicle.writeCount shouldBe 1
         }
 
     @Test
@@ -360,7 +376,7 @@ class TurnEngineTest {
             h.engine.handle(PCM, InputSource.CLIP)
 
             // Six seconds pass with the driver saying nothing - longer than the 5 s action budget,
-            // but well inside the 8 s confirmation window.
+            // but well inside the 10 s confirmation window.
             testScheduler.advanceTimeBy(6_000)
 
             h.speech.queue("yes", 0.9f)

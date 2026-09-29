@@ -41,3 +41,22 @@ jobs:
           path: |
             core/build/reports/
             core/build/test-results/
+
+  app:
+    name: app (build, lint, manifest check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      # Builds whisper.cpp with the NDK; the merged-manifest check enforces SR-20 (no INTERNET,
+      # nothing exported but the launcher activity).
+      - name: Build, ktlint, manifest check
+        run: ./gradlew :app:assembleDebug :app:ktlintCheck :native:whisper:ktlintCheck :app:verifyDebugMergedManifest :app:verifyReleaseMergedManifest

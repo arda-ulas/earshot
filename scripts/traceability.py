@@ -88,7 +88,8 @@ def main():
     check = "--check" in sys.argv
     problems = []
     for rid, _text, how in reqs:
-        manual_only = "manual" in how.lower() and "unit" not in how.lower()
+        # Requirements verified only by the manual test plan or by a build check have no @Verifies test.
+        manual_only = ("manual" in how.lower() or "build check" in how.lower()) and "unit" not in how.lower()
         if not manual_only and not tests.get(rid):
             problems.append(f"{rid} has no verifying test (verification: {how})")
     unknown = sorted(k for k in tests if k.startswith("SR-") and k not in {r[0] for r in reqs})
