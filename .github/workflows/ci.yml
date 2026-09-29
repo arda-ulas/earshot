@@ -31,6 +31,9 @@ jobs:
       - name: Unit tests, ktlint, coverage
         run: ./gradlew :core:check :core:koverXmlReport
 
+      - name: Requirement traceability
+        run: python3 scripts/traceability.py --check
+
       - uses: actions/upload-artifact@v7
         if: always()
         with:
