@@ -299,7 +299,7 @@ class TurnEngineTest {
     fun `U10 an indirect request goes through the language model and needs confirmation`() =
         runTest {
             val h = harness(DrivingState.PARKED)
-            h.lm.queueReturns("""{"cmd":"adjust_temp","delta":2}""")
+            h.lm.queueReturns("""{"intent":"warmer"}""")
             h.speech.queue("I'm freezing", 0.9f)
             val asked = h.engine.handle(PCM, InputSource.CLIP)
             asked.outcome shouldBe Outcome.CONFIRMATION_REQUESTED
@@ -536,7 +536,7 @@ class TurnEngineTest {
             (actedStages.containsAll(listOf("stt", "rules", "policy", "act"))) shouldBe true
             ("lm" in actedStages) shouldBe false
 
-            h.lm.queueReturns("""{"cmd":"adjust_temp","delta":2}""")
+            h.lm.queueReturns("""{"intent":"warmer"}""")
             h.speech.queue("I'm freezing", 0.9f)
             h.engine.handle(PCM, InputSource.CLIP)
             val confirmed = h.trace.traces.last()

@@ -35,7 +35,9 @@ the audio path. Every result row says where the audio came from:
 | M-12 | SR-3 | "Set the temperature to 35" | Gives the valid range; no action |
 | M-13 | SR-19 | Hold to talk while a reply is being spoken | The button does nothing until speech ends |
 | M-14 | SR-12 | Delete or corrupt the speech model, restart | Assistant disabled with the reason on screen; no crash |
-| M-15 | Live voice | Repeat M-1, M-2, M-5, M-6, M-9 speaking into the microphone | As above |
+| M-15 | Live voice | Repeat M-1, M-2, M-5, M-6, M-9, M-16 speaking into the microphone | As above |
+| M-16 | U10 | Parked and City drive; "I'm freezing", then "yes" / "no" | Rules miss; the language model answers `warmer`; asks "Raise the temperature by 2 degrees? Say yes or no."; yes raises it by 2 (read back), no does nothing |
+| M-17 | SG-7 | "Order me a pizza" (heard clearly, so the rules miss and the language model runs) | Model answers `out_of_domain`; refused, no action |
 
 ## Results
 
@@ -61,6 +63,31 @@ speech-to-text stage (whisper tiny.en, 2 threads) took 2.2–4.4 s per clip, typ
 | M-13 | — | not run | Needs the microphone |
 | M-14 | — | pass | One byte of `ggml-tiny.en.bin` changed on the device: "Assistant disabled. Speech model ggml-tiny.en.bin: SHA-256 mismatch; the file was changed or damaged." Button disabled, no crash. File restored afterwards |
 | M-15 | mic | not run | Pending: needs a person at the microphone |
+
+### 2026-09-29 (later), same emulator and host, debug build with the language-model fallback
+
+Model Qwen3-0.6B Q4_0, intent format (see `docs/lm-eval`). The fixed prompt prefix (409 tokens) is
+decoded once in the background after start-up; that took 8.2 s on this emulator.
+
+| ID | Input | Result | Notes |
+|---|---|---|---|
+| M-16 | clip | pass | Samantha and Daniel, parked and moving: "I'm freezing." -> `{"intent":"warmer"}` -> "Raise the temperature by 2 degrees? Say yes or no." Moving + yes: "Temperature is now 23 degrees." (21 + 2, read back, voice only). Parked + no: "Okay, I won't." Language-model stage 0.5–2.0 s |
+| M-17 | clip | pass | Samantha: "Order me a pizza." -> `{"intent":"out_of_domain"}` -> refused. Daniel's clip was heard as "Automia pizza" at p 0.48, below the threshold, so it re-prompted and the model was not asked |
+| M-1, M-9 | clip | pass | Re-run with the language model loaded: unchanged |
+
+Findings during these runs:
+
+- With the previous model (Qwen2.5-0.5B) and the first prompt, "I'm freezing" became 16 °C and
+  "order me a pizza" became AC on. The confirmation question exposed both, so nothing happened
+  without a yes, but the fallback was not useful. Replaced after the evaluation in `docs/lm-eval`.
+- On device, the parser's regex failed to load (Android's ICU rejects a bare `}` that the desktop JVM
+  accepts) and llama.cpp rejected the multi-line grammar. Either one left the fallback refusing
+  every indirect request, which is the intended fail-safe. Both were invisible to the JVM tests; both
+  are fixed, the grammar layout now has a test.
+- When the laptop was heavily loaded (load average around 20 while building), whisper's encoder took
+  up to 6 s and some turns hit the 10 s speech-to-text timeout, which re-prompted as designed.
+  Whisper checks its abort flag between encoder passes, so an aborted turn can run past 10 s before
+  it returns (up to about 20 s seen).
 
 Findings during these runs, fixed before the results above:
 

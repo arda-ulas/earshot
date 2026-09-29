@@ -86,9 +86,10 @@ class FakeLm(
         user: String,
         grammar: String,
         maxTokens: Int,
+        assistantPrefix: String,
     ): String {
         callCount++
-        return when (val next = if (results.isNotEmpty()) results.removeAt(0) else Result.Returns("""{"cmd":"out_of_domain"}""")) {
+        return when (val next = if (results.isNotEmpty()) results.removeAt(0) else Result.Returns("""{"intent":"out_of_domain"}""")) {
             is Result.Returns -> {
                 next.text
             }
