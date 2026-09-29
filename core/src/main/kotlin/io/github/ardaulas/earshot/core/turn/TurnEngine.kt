@@ -34,8 +34,11 @@ import java.util.UUID
 data class TurnConfig(
     /** SG-5: an action must start within this long after the utterance ends, or it is discarded. */
     val actionBudgetMs: Long = 5_000,
-    /** How long a confirmation question waits for its yes or no. */
-    val confirmationTtlMs: Long = 8_000,
+    /**
+     * How long a confirmation question waits for its yes or no, measured to the end of the answering
+     * utterance so slow speech-to-text does not count against the driver.
+     */
+    val confirmationTtlMs: Long = 10_000,
     /** Speech-to-text that takes longer is abandoned and treated as unclear audio (re-prompt). */
     val sttTimeoutMs: Long = 10_000,
     /** A vehicle write that takes longer counts as failed; there is no retry loop. */
@@ -186,7 +189,7 @@ class TurnEngine(
 
         val now = clock.millis()
         val currentPending = pending
-        val pendingValid = currentPending != null && now <= currentPending.expiresAtMs
+        val pendingValid = currentPending != null && utteranceEndMs <= currentPending.expiresAtMs
         val frontDefrostOn =
             if (command is Command.SetFan) readBool(ClimateProperty.FRONT_DEFROST) else null
         val verdict =

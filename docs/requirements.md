@@ -23,7 +23,7 @@ requirement carry `@Verifies("SR-n")`; [traceability.md](traceability.md) is gen
 | SR-15 | The spoken confirmation of an action comes from reading the property back after the write, never from the request. | fail-safe | unit tests |
 | SR-16 | At most one vehicle action per turn. | fail-safe | unit tests |
 | SR-17 | Only allowlisted comfort properties can be written. | deny by default | by construction (`ClimateProperty`), unit tests |
-| SR-18 | A confirmation question expires after 8 s; any other request abandons it; "never mind" cancels it. | SG-6, SG-7 | unit tests |
+| SR-18 | A confirmation question expires 10 s after it is asked (measured to the end of the answer); any other request abandons it; "never mind" cancels it. | SG-6, SG-7 | unit tests |
 | SR-19 | No audio capture while text-to-speech is playing. | SG-8 | manual test plan |
-| SR-20 | The app has no `INTERNET` permission and exports no component except the launcher activity. | TH-2, TH-6 | manifest check, manual test plan |
+| SR-20 | The app has no `INTERNET` permission and exports no component except the launcher activity. | TH-2, TH-6 | build check on the merged manifest (`:app:verify<Variant>MergedManifest`, part of `check`) |
 | SR-21 | Every turn writes a trace with per-stage latency, the host it was measured on, and whether the audio came from the microphone or a clip. | G4 | unit tests |
