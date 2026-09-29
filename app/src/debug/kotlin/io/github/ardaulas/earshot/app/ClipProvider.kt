@@ -14,4 +14,21 @@ object ClipProvider {
             ?.listFiles { f -> f.extension.equals("wav", ignoreCase = true) }
             ?.sortedBy { it.name }
             .orEmpty()
+
+    /**
+     * What a clip says, from `captions.tsv` written by `scripts/make-clips.sh`, for the recording
+     * caption. Null if unknown.
+     */
+    fun caption(
+        context: Context,
+        clip: String,
+    ): String? =
+        context
+            .getExternalFilesDir("clips")
+            ?.resolve("captions.tsv")
+            ?.takeIf { it.isFile }
+            ?.readLines()
+            ?.map { it.split('\t') }
+            ?.firstOrNull { it.size == 3 && it[0] == clip }
+            ?.let { (_, voice, text) -> "$text ($voice)" }
 }

@@ -67,6 +67,7 @@ fun AssistantScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            state.clipCaption?.let { RecordingCaption(it, state) }
             Header(state)
             AssistantPanel(state, onPress, onRelease)
             DeveloperPanel(
@@ -76,6 +77,31 @@ fun AssistantScreen(
                 onClip = viewModel::playClip,
             )
         }
+    }
+}
+
+/**
+ * Debug builds only. Captions a clip-driven turn for screen recordings, which carry no audio: what the
+ * synthetic clip says and what the assistant replied. A recording aid, not part of the in-car interface.
+ */
+@Composable
+private fun RecordingCaption(
+    clip: String,
+    state: UiState,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.inverseSurface, MaterialTheme.shapes.small)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        val style = MaterialTheme.typography.bodyMedium
+        val color = MaterialTheme.colorScheme.inverseOnSurface
+        Text("Recording caption (debug build, synthetic clip input)", style = MaterialTheme.typography.labelSmall, color = color)
+        Text("Clip says: \u201C$clip\u201D", style = style, color = color, fontWeight = FontWeight.SemiBold)
+        val reply = if (state.phase == Phase.THINKING) "\u2026" else state.lastSpoken?.let { "\u201C$it\u201D" } ?: "\u2026"
+        Text("Assistant says: $reply", style = style, color = color)
     }
 }
 

@@ -4,6 +4,16 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # compileSdk and targetSdk are pinned to 36 to match the API 36 emulator target. These AndroidX
+    # trains declare minCompileSdk=37 in their AAR metadata, so their updates cannot build here
+    # (#4, #5). Remove these rules when the project moves to API 37.
+    ignore:
+      - dependency-name: "androidx.compose:compose-bom"
+        versions: [">= 2026.09.00"]
+      - dependency-name: "androidx.core:core-ktx"
+        versions: [">= 1.19.0"]
+      - dependency-name: "androidx.lifecycle:*"
+        versions: [">= 2.11.0"]
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -69,6 +69,8 @@ data class UiState(
     val ttsAvailable: Boolean? = null,
     val message: String? = null,
     val clips: List<String> = emptyList(),
+    /** Debug builds only: what the playing clip says, captioned for screen recordings (which have no audio). */
+    val clipCaption: String? = null,
 )
 
 /**
@@ -181,6 +183,7 @@ class AssistantViewModel(
 
     /** Push-to-talk pressed. While a turn is being processed, a press cancels it instead. */
     fun onPress(hasMicPermission: Boolean) {
+        _state.update { it.copy(clipCaption = null) }
         when (_state.value.phase) {
             Phase.THINKING -> {
                 turnJob?.cancel()
@@ -217,6 +220,7 @@ class AssistantViewModel(
     fun playClip(name: String) {
         if (_state.value.phase != Phase.IDLE || engine == null) return
         val file = ClipProvider.clips(getApplication()).firstOrNull { it.name == name } ?: return
+        _state.update { it.copy(clipCaption = ClipProvider.caption(getApplication(), name) ?: name) }
         runTurn(InputSource.CLIP, null) {
             withContext(Dispatchers.IO) {
                 try {

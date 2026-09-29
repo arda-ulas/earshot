@@ -8,12 +8,18 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 out="$root/clips"
 mkdir -p "$out"
+# captions.tsv (file, voice, text) lets the debug build caption what a clip says, e.g. for screen
+# recordings, which carry no audio.
+captions="$out/captions.tsv"
+: > "$captions"
 
 voices=("Samantha" "Daniel")
 
 clip() { # id text
   for v in "${voices[@]}"; do
-    say -v "$v" --data-format=LEI16@16000 -o "$out/$1-$(echo "$v" | tr "A-Z" "a-z").wav" "$2"
+    f="$1-$(echo "$v" | tr "A-Z" "a-z").wav"
+    say -v "$v" --data-format=LEI16@16000 -o "$out/$f" "$2"
+    printf '%s\t%s\t%s\n' "$f" "$v" "$2" >> "$captions"
   done
 }
 
@@ -43,5 +49,7 @@ w.writeframes(b"".join(struct.pack("<h", int(random.gauss(0, 20))) for _ in rang
 w.close()
 PY
 say -v Whisper -r 320 --data-format=LEI16@16000 -o "$out/u7-mumble-whisper.wav" "mm the uh fan hmm to the uh"
+printf 'u7-near-silence.wav\tgenerated noise\t(near-silence)\n' >> "$captions"
+printf 'u7-mumble-whisper.wav\tWhisper\t(fast whispered mumble)\n' >> "$captions"
 
-ls "$out" | wc -l | xargs echo "clips written:"
+ls "$out"/*.wav | wc -l | xargs echo "clips written:"
