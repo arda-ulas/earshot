@@ -36,7 +36,7 @@ class WhisperSpeechEngine private constructor(
         /** Loads the model; null if whisper.cpp could not read it. Blocking: call off the main thread. */
         fun load(
             model: File,
-            threads: Int = 4,
+            threads: Int = 2,
             dispatcher: CoroutineDispatcher = Dispatchers.Default,
         ): WhisperSpeechEngine? {
             val handle = WhisperNative.init(model.absolutePath)

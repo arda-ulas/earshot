@@ -3,7 +3,6 @@
 #include <jni.h>
 #include <android/log.h>
 
-#include <algorithm>
 #include <atomic>
 #include <string>
 #include <vector>
@@ -79,9 +78,8 @@ Java_io_github_ardaulas_earshot_whisper_WhisperNative_transcribe(
     // and a token cap well above a push-to-talk command.
     params.temperature_inc = 0.0f;
     params.max_tokens = 48;
-    // Encode only as much of whisper's 30 s window as the utterance needs (50 frames per second of
-    // audio, plus a margin). Push-to-talk commands are a few seconds, so this cuts encoder work a lot.
-    params.audio_ctx = std::min(1500, static_cast<int>(n / 320) + 128);
+    // The full 30 s encoder window is kept on purpose: shrinking it (audio_ctx) saved about 0.5 s on
+    // the emulator but made whisper loop or stall on sub-second answers like "yes".
     params.print_progress = false;
     params.print_realtime = false;
     params.print_special = false;
