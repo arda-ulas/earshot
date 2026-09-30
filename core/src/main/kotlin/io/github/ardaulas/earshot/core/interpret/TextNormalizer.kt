@@ -44,6 +44,13 @@ object TextNormalizer {
         val folded =
             raw
                 .lowercase()
+                // Curly apostrophes and quotes: "don’t" must stay a negation (audit re-check #1).
+                .replace('\u2019', '\'')
+                .replace('\u2018', '\'')
+                // A unit letter after a number or degree sign is a unit, not a stray word.
+                .replace(Regex("""(\d)\s*°?\s*f\b"""), "$1 fahrenheit")
+                .replace(Regex("""(\d)\s*°?\s*k\b"""), "$1 kelvin")
+                .replace(Regex("""(\d)\s*°\s*c\b"""), "$1 degrees")
                 .replace("°", " degrees ")
                 .replace(Regex("""\ba\s*/\s*c\b"""), "ac")
                 .replace(Regex("""\ba\.c\.?"""), "ac")
@@ -59,6 +66,7 @@ object TextNormalizer {
                 // "28.5" cannot turn into the valid values 21 and 28 (audit #2).
                 .replace(Regex("""(^|[^\w])[-\u2212]\s*(\d)"""), "$1 minus $2")
                 .replace(Regex("""(\d)\s*[.,]\s*(\d)"""), "$1 point $2")
+                .replace(Regex("""(\d)\s*[/:]\s*(\d)"""), "$1 slash $2")
                 .replace('-', ' ')
                 .replace(Regex("""[^a-z0-9\s']"""), " ")
                 .replace("'", "")

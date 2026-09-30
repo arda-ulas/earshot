@@ -9,9 +9,14 @@ import kotlin.math.abs
  * becomes null, which the driving-state resolver treats as missing (unknown, handled as moving).
  */
 object CarSignalMapper {
-    /** PERF_VEHICLE_SPEED is metres per second and negative when reversing. */
+    /**
+     * PERF_VEHICLE_SPEED is metres per second and negative when reversing. An unreadable value is null;
+     * a nonsense value (NaN, infinite) is passed on as NaN so the resolver sees an invalid reading and
+     * returns UNKNOWN, instead of losing the distinction (audit re-check N1).
+     */
     fun speedKmh(metresPerSecond: Float?): Double? {
-        if (metresPerSecond == null || metresPerSecond.isNaN() || metresPerSecond.isInfinite()) return null
+        if (metresPerSecond == null) return null
+        if (metresPerSecond.isNaN() || metresPerSecond.isInfinite()) return Double.NaN
         return abs(metresPerSecond.toDouble()) * MS_TO_KMH
     }
 

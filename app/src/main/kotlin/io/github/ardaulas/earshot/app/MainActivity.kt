@@ -45,6 +45,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        viewModel.onLifecycleStart()
+    }
+
     override fun onStop() {
         super.onStop()
         viewModel.onLifecycleStop()

@@ -62,11 +62,21 @@ class RuleInterpreter {
         }
         return when {
             NEGATION.containsMatchIn(t) -> RuleResult.Rejected("negated")
+
             raw.endsWith("?") || QUESTION.containsMatchIn(t) -> RuleResult.Rejected("question")
+
             unsupportedTarget(t) -> RuleResult.Rejected("unsupported target")
+
             UNSUPPORTED_UNIT.containsMatchIn(t) -> RuleResult.Rejected("unsupported unit")
-            actions.size > 1 -> RuleResult.Rejected("more than one action")
+
+            actions.size > 1 || CONJUNCTION.containsMatchIn(t) -> RuleResult.Rejected("more than one action")
+
+            // Deny by default: an action utterance may contain only command vocabulary, so "the pizza
+            // should be warmer" cannot change the cabin (audit re-check #1).
+            t.split(" ").any { it !in ACTION_VOCABULARY && !it.all(Char::isDigit) } -> RuleResult.Rejected("unrecognised words")
+
             INVALID_NUMBER.containsMatchIn(t) -> invalidNumber(actions.single())
+
             else -> actions.single()
         }
     }
@@ -212,8 +222,104 @@ class RuleInterpreter {
         val DOMAIN_WORD = Regex("""\b(warmer|cooler|hotter|colder|heat|heated|heating|cool|cooling|warm|temperature|fan|defrost|ac)\b""")
         val CONJUNCTION = Regex("""\b(and|but|then|also|plus)\b""")
         val STEP_WORDS = Regex("""\b(up|down|by|warmer|cooler|raise|lower|increase|decrease)\b""")
-        val UNSUPPORTED_UNIT = Regex("""\b(fahrenheit|kelvin|percent)\b""")
-        val INVALID_NUMBER = Regex("""\b(minus|negative) \d+|\d+ point \d+|\bpoint \d+|\b(half|quarter)\b""")
+        val UNSUPPORTED_UNIT = Regex("""\b(fahrenheit|kelvin|percent|f)\b""")
+
+        /** Every word an action utterance may contain; anything else rejects the action. */
+        val ACTION_VOCABULARY =
+            setOf(
+                "please",
+                "can",
+                "could",
+                "would",
+                "will",
+                "you",
+                "i",
+                "id",
+                "want",
+                "like",
+                "lets",
+                "let",
+                "us",
+                "me",
+                "my",
+                "we",
+                "the",
+                "a",
+                "an",
+                "it",
+                "its",
+                "this",
+                "that",
+                "to",
+                "of",
+                "at",
+                "in",
+                "on",
+                "off",
+                "up",
+                "down",
+                "by",
+                "for",
+                "now",
+                "set",
+                "make",
+                "turn",
+                "switch",
+                "put",
+                "get",
+                "change",
+                "go",
+                "keep",
+                "just",
+                "bit",
+                "little",
+                "lot",
+                "more",
+                "much",
+                "some",
+                "slightly",
+                "degree",
+                "degrees",
+                "celsius",
+                "temperature",
+                "thermostat",
+                "heat",
+                "heating",
+                "heater",
+                "warm",
+                "warmer",
+                "hotter",
+                "cool",
+                "cooler",
+                "colder",
+                "raise",
+                "lower",
+                "increase",
+                "decrease",
+                "fan",
+                "speed",
+                "level",
+                "max",
+                "maximum",
+                "full",
+                "highest",
+                "ac",
+                "air",
+                "defrost",
+                "front",
+                "rear",
+                "back",
+                "windshield",
+                "window",
+                "windows",
+                "car",
+                "cabin",
+                "inside",
+                "here",
+                "in",
+                "please",
+            )
+        val INVALID_NUMBER = Regex("""\b(minus|negative) \d+|\d+ point \d+|\bpoint \d+|\d+ slash \d+|\b(half|quarter)\b""")
         val STEP = Regex("""\b(up|down)\s+(?:by\s+)?(\d+)\s+degrees?\b""")
         val WARMER =
             listOf("warmer", "hotter", "turn up the heat", "raise the temperature", "increase the temperature", "warm it up")

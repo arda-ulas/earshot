@@ -61,7 +61,8 @@ fun AssistantScreen(
     Scaffold { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             // Pinned above the scrolling content so it stays visible while the clip controls are used.
-            state.clipCaption?.let {
+            // Debug caption and developer details are hidden unless parked (re-audit N6).
+            state.clipCaption?.takeIf { state.drivingState == DrivingState.PARKED }?.let {
                 Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp)) { RecordingCaption(it, state) }
             }
             AssistantContent(state, onPress, onRelease, viewModel)
@@ -215,8 +216,9 @@ private fun AssistantPanel(
             if (state.awaitingConfirmation) Text("Waiting for yes or no", fontWeight = FontWeight.SemiBold)
             state.message?.let { Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center) }
 
-            // Screen output exists only when the policy allowed it (parked). While moving: voice only.
-            when (val screen = state.screen) {
+            // Screen output exists only when the policy allowed it (parked), and is rendered only while
+            // still parked (re-audit #7).
+            when (val screen = state.screen?.takeIf { state.drivingState == DrivingState.PARKED }) {
                 is ScreenContent.Text -> {
                     Text(screen.text, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
                 }
@@ -293,13 +295,15 @@ private fun DeveloperPanel(
             }
             val speed = state.speedKmh?.let { String.format(Locale.US, "%.0f km/h", it) } ?: "no signal"
             Text("Signals: $speed, gear ${state.gear?.name?.lowercase() ?: "no signal"} → ${state.drivingState}")
-            ClimateValues(state.climate)
+            val parked = state.drivingState == DrivingState.PARKED
+            // Climate values and the last turn (transcript, reply, timings) only while parked (re-audit N6).
+            if (parked) ClimateValues(state.climate) else Text("Details hidden while driving", style = MaterialTheme.typography.bodySmall)
             (state.models as? ModelStatus.Ready)?.let {
                 Text("Speech model: ${it.speechModel}", style = MaterialTheme.typography.bodySmall)
                 it.lmNote?.let { note -> Text("Language model: $note", style = MaterialTheme.typography.bodySmall) }
             }
             if (state.clips.isNotEmpty()) ClipPicker(state.clips, enabled = state.phase == Phase.IDLE, onClip = onClip)
-            state.lastTrace?.let { LastTurn(it) }
+            if (parked) state.lastTrace?.let { LastTurn(it) }
         }
     }
 }

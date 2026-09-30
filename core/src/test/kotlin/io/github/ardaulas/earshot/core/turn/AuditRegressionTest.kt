@@ -26,8 +26,9 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 
 /**
- * One test per reproduction scenario from the hostile audit of v0.2.1 (2026-09-30). Each fails on
- * v0.2.1 and passes after the fix.
+ * Core-level reproductions of the hostile audit of v0.2.1 (2026-09-30) and of its re-audit. They cover
+ * the scenarios that live in :core; app-level scenarios (capture, TTS, teardown) are checked on the
+ * emulator and recorded in docs/manual-test-plan.md.
  */
 class AuditRegressionTest {
     private class Rig(
@@ -289,7 +290,7 @@ class AuditRegressionTest {
     // --- #16 trace failure --------------------------------------------------------------------
 
     @Test
-    @Verifies("SR-15", "SR-21")
+    @Verifies("SR-15", "SR-21", "SR-24")
     fun `audit 16 - a trace storage failure does not hide an executed action`() =
         runTest {
             val r = rig(DrivingState.PARKED)
@@ -299,4 +300,84 @@ class AuditRegressionTest {
             result.spoken shouldBe Responses.temperatureNow(19)
             result.traceError shouldBe "IOException"
         }
+
+    // --- re-audit round 2 -----------------------------------------------------------------------
+
+    @Test
+    @Verifies("SR-1")
+    fun `re-audit 1 - conjunctions, stray objects and curly apostrophes never act`() {
+        val rules = RuleInterpreter()
+        for (text in listOf(
+            "make it warmer then cooler",
+            "the pizza should be warmer",
+            "don\u2019t make it warmer",
+            "make it warmer and turn on the ac",
+        )) {
+            rules.interpret(text).shouldBeInstanceOf<RuleResult.Rejected>()
+        }
+    }
+
+    @Test
+    @Verifies("SR-3")
+    fun `re-audit 2 - fractions and abbreviated units are not whole Celsius values`() {
+        val rules = RuleInterpreter()
+        rules.interpret("set temperature to 21/2").shouldBeInstanceOf<RuleResult.OutOfRange>()
+        rules.interpret("set temperature to 21\u00B0F").shouldBeInstanceOf<RuleResult.Rejected>()
+        rules.interpret("set temperature to 21 F").shouldBeInstanceOf<RuleResult.Rejected>()
+        rules.interpret("set the temperature to 21\u00B0C") shouldBe RuleResult.Matched(Command.SetTemp(21))
+    }
+
+    @Test
+    @Verifies("SR-18", "SR-8")
+    fun `re-audit 3 - an unclear unrelated request ends a pending confirmation`() =
+        runTest {
+            val r = rig(DrivingState.MOVING)
+            r.vehicle.write(ClimateProperty.FRONT_DEFROST, 1)
+            r.say("turn off the defrost")
+            r.say("set temperature to 35", confidence = 0.1f).outcome shouldBe Outcome.REPROMPTED
+            r.say("yes").outcome shouldBe Outcome.REFUSED
+            (r.vehicle.read(ClimateProperty.FRONT_DEFROST) as ReadResult.Value).value shouldBe 1
+        }
+
+    @Test
+    @Verifies("SR-18")
+    fun `re-audit 3 - an unclear yes keeps the question open for one clear answer`() =
+        runTest {
+            val r = rig(DrivingState.MOVING)
+            r.say("turn off the defrost")
+            r.say("yes", confidence = 0.1f).outcome shouldBe Outcome.REPROMPTED
+            r.say("yes").outcome shouldBe Outcome.ACTED
+        }
+
+    @Test
+    @Verifies("SR-18")
+    fun `re-audit 3 - an utterance the app rejected without handling ends the confirmation`() =
+        runTest {
+            val r = rig(DrivingState.MOVING)
+            r.say("turn off the defrost")
+            r.engine.abandonConfirmation()
+            r.say("yes").outcome shouldBe Outcome.REFUSED
+            r.vehicle.writeCount shouldBe 0
+        }
+
+    @Test
+    @Verifies("SR-8")
+    fun `re-audit 7 - the car moving during the re-check read still stops fan off`() =
+        runTest {
+            val r = rig(DrivingState.PARKED)
+            r.vehicle.write(ClimateProperty.FRONT_DEFROST, 1)
+            val before = r.vehicle.writeCount
+            var reads = 0
+            // Parked during the first defrost read (policy), moving from the second (re-check) on.
+            r.vehicle.onRead = { if (++reads >= 2) r.state = DrivingState.MOVING }
+            r.say("fan off").outcome shouldBe Outcome.DISCARDED_STATE_CHANGED
+            r.vehicle.writeCount shouldBe before
+        }
+
+    @Test
+    @Verifies("SR-6")
+    fun `re-audit N1 - a park gear without a readable speed is not parked`() {
+        DrivingStateResolver().apply { update(SignalSample(null, Gear.PARK, 0)) }.current(0) shouldBe DrivingState.UNKNOWN
+        DrivingStateResolver().apply { update(SignalSample(0.0, Gear.PARK, 0)) }.current(0) shouldBe DrivingState.PARKED
+    }
 }

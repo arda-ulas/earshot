@@ -13,6 +13,20 @@ apk="$root/app/build/outputs/apk/debug/app-debug.apk"
 dir="/system/priv-app/Earshot"
 perm="/system/etc/permissions/privapp-permissions-earshot.xml"
 
+# Emulator only (re-audit N5): refuse anything that is not an Android emulator, and require an explicit
+# target when more than one device is connected.
+if [[ -z "${ANDROID_SERIAL:-}" && "$("$adb" devices | grep -c -w device)" != "1" ]]; then
+  echo "more than one device: set ANDROID_SERIAL to the emulator" >&2; exit 1
+fi
+serial="$("$adb" get-serialno | tr -d '\r')"
+qemu="$("$adb" shell getprop ro.kernel.qemu | tr -d '\r')"
+bootqemu="$("$adb" shell getprop ro.boot.qemu | tr -d '\r')"
+auto="$("$adb" shell pm has-feature android.hardware.type.automotive | tr -d '\r')"
+if [[ "$serial" != emulator-* || ( "$qemu" != "1" && "$bootqemu" != "1" ) ]]; then
+  echo "refusing: $serial is not an Android emulator" >&2; exit 1
+fi
+[[ "$auto" == "true" ]] || { echo "refusing: $serial is not an Android Automotive image" >&2; exit 1; }
+
 "$adb" root >/dev/null && sleep 1
 "$adb" remount
 if [[ "${1:-}" == "--undo" ]]; then

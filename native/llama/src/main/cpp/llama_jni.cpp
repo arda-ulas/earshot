@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <new>
 #include <string>
 #include <vector>
 
@@ -63,7 +64,9 @@ Java_io_github_ardaulas_earshot_llama_LlamaNative_load(JNIEnv *env, jclass, jstr
     llama_backend_init();
     llama_model_params mparams = llama_model_default_params();
     mparams.n_gpu_layers = 0;
-    llama_model *model = llama_model_load_from_file(to_string(env, path).c_str(), mparams);
+    const std::string model_path = to_string(env, path);
+    if (env->ExceptionCheck() || model_path.empty()) return 0;
+    llama_model *model = llama_model_load_from_file(model_path.c_str(), mparams);
     if (model == nullptr) return 0;
 
     llama_context_params cparams = llama_context_default_params();
@@ -77,7 +80,12 @@ Java_io_github_ardaulas_earshot_llama_LlamaNative_load(JNIEnv *env, jclass, jstr
         llama_model_free(model);
         return 0;
     }
-    auto *h = new Handle();
+    auto *h = new (std::nothrow) Handle();
+    if (h == nullptr) {
+        llama_free(ctx);
+        llama_model_free(model);
+        return 0;
+    }
     h->model = model;
     h->ctx = ctx;
     h->vocab = llama_model_get_vocab(model);
@@ -149,6 +157,7 @@ Java_io_github_ardaulas_earshot_llama_LlamaNative_generate(
     const std::string prefix = to_string(env, jprefix);
     const std::string suffix = to_string(env, jsuffix);
     const std::string grammar = to_string(env, jgrammar);
+    if (env->ExceptionCheck()) return nullptr;
     llama_memory_t mem = llama_get_memory(h->ctx);
 
     if (!(prefix == h->prefix && h->n_prefix > 0)) {

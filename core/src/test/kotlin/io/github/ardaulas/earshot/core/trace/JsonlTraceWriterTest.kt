@@ -65,4 +65,20 @@ class JsonlTraceWriterTest {
                 .toSet()
         remaining shouldBe setOf("d3", "d4")
     }
+
+    @Test
+    fun `old files are deleted by age and a day's file stops growing at its size limit`(
+        @org.junit.jupiter.api.io.TempDir dir: java.io.File,
+    ) {
+        val old = java.io.File(dir, "2000-01-01.jsonl").apply { writeText("x\n") }
+        old.setLastModified(0)
+        val writer = JsonlTraceWriter(dir, { "2026-09-30" }, maxFileBytes = 1, wallClockMs = { 30L * 24 * 60 * 60 * 1000 })
+        writer.write(trace())
+        writer.write(trace())
+        old.exists() shouldBe false
+        java.io
+            .File(dir, "2026-09-30.jsonl")
+            .readLines()
+            .size shouldBe 1
+    }
 }

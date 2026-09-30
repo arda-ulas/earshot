@@ -43,8 +43,10 @@ class SimulatedVehicleGateway(
     override suspend fun write(
         property: ClimateProperty,
         value: Int,
+        notAfterMs: Long,
     ): WriteResult {
         if (!connected) return WriteResult.Unavailable
+        if (clock.millis() > notAfterMs) return WriteResult.TimedOut
         if (value !in validRange(property)) return WriteResult.Rejected
         climate[property] = value
         return WriteResult.Ok

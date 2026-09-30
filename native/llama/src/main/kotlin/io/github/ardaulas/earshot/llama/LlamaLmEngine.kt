@@ -45,6 +45,8 @@ class LlamaLmEngine private constructor(
         return mutex.withLock {
             synchronized(lock) {
                 if (closed) throw IOException("closed")
+                // Reset before the call is marked active, so an abort from close() cannot be erased (re-audit N10).
+                LlamaNative.resetAbort(handle)
                 active = true
             }
             try {
@@ -66,11 +68,7 @@ class LlamaLmEngine private constructor(
         maxTokens: Int,
         assistantPrefix: String,
     ): String =
-        runAbortable(
-            dispatcher,
-            reset = { LlamaNative.resetAbort(handle) },
-            abort = { LlamaNative.abort(handle) },
-        ) {
+        runAbortable(dispatcher, abort = { LlamaNative.abort(handle) }) {
             val prefix =
                 LlamaNative.formatChat(handle, prefixRoles.toTypedArray(), prefixContents.toTypedArray(), false)
                     ?: throw IOException("chat template failed")

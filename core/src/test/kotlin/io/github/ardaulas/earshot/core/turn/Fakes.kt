@@ -143,6 +143,7 @@ class FaultInjectingGateway(
     override suspend fun write(
         property: ClimateProperty,
         value: Int,
+        notAfterMs: Long,
     ): WriteResult {
         writeCount++
         return when {
@@ -160,7 +161,7 @@ class FaultInjectingGateway(
             }
 
             else -> {
-                delegate.write(property, value)
+                delegate.write(property, value, notAfterMs)
             }
         }
     }

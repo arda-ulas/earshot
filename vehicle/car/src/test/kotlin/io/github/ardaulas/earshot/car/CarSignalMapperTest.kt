@@ -16,10 +16,10 @@ class CarSignalMapperTest {
     }
 
     @Test
-    fun `unreadable or nonsense speed is missing`() {
+    fun `unreadable speed is missing, nonsense speed stays visibly invalid`() {
         CarSignalMapper.speedKmh(null) shouldBe null
-        CarSignalMapper.speedKmh(Float.NaN) shouldBe null
-        CarSignalMapper.speedKmh(Float.POSITIVE_INFINITY) shouldBe null
+        CarSignalMapper.speedKmh(Float.NaN)!!.isNaN() shouldBe true
+        CarSignalMapper.speedKmh(Float.POSITIVE_INFINITY)!!.isNaN() shouldBe true
     }
 
     @Test

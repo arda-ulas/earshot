@@ -14,6 +14,17 @@ class FakeCarProperties : CarProperties {
         areaId: Int,
     ) = floats[propertyId to areaId]
 
+    /** Vehicle timestamp per float property (nanoseconds); defaults to "now". */
+    val floatTimestamps = mutableMapOf<Pair<Int, Int>, Long>()
+    var nowNanos = 0L
+
+    override fun readFloatTimed(
+        propertyId: Int,
+        areaId: Int,
+    ) = floats[propertyId to areaId]?.let { it to (floatTimestamps[propertyId to areaId] ?: nowNanos) }
+
+    override fun elapsedRealtimeNanos() = nowNanos
+
     override fun readInt(
         propertyId: Int,
         areaId: Int,

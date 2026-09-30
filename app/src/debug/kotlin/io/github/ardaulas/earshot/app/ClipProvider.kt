@@ -26,9 +26,11 @@ object ClipProvider {
         context
             .getExternalFilesDir("clips")
             ?.resolve("captions.tsv")
-            ?.takeIf { it.isFile }
-            ?.readLines()
+            ?.takeIf { it.isFile && it.length() <= MAX_CAPTIONS_BYTES }
+            ?.let { f -> runCatching { f.readLines() }.getOrNull() }
             ?.map { it.split('\t') }
             ?.firstOrNull { it.size == 3 && it[0] == clip }
             ?.let { (_, voice, text) -> "$text ($voice)" }
+
+    private const val MAX_CAPTIONS_BYTES = 64_000L
 }

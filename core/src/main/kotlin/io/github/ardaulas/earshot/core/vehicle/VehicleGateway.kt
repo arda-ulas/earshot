@@ -50,9 +50,15 @@ interface VehicleGateway {
 
     suspend fun read(property: ClimateProperty): ReadResult
 
+    /**
+     * Writes one property. [notAfterMs] (monotonic ms) is the latest time the write may start; an
+     * implementation that has preparation work of its own must check it again immediately before the
+     * effect and return [WriteResult.TimedOut] if it has passed.
+     */
     suspend fun write(
         property: ClimateProperty,
         value: Int,
+        notAfterMs: Long = Long.MAX_VALUE,
     ): WriteResult
 
     /** The latest driving-signal reading, or null if none has arrived. */

@@ -39,11 +39,14 @@ import io.github.ardaulas.earshot.whisper.WhisperSpeechEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -102,16 +105,26 @@ class AssistantViewModel(
 ) : AndroidViewModel(app) {
     private val clock = MonotonicClock.System
     private val simulated = SimulatedVehicleGateway(clock, DrivingScenario.PARKED)
-    private val platformCar: PlatformCar? =
-        if (app.packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE)) PlatformCar.connect(app) else null
+    private val automotive = app.packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE)
+    private val platformCar: PlatformCar? = if (automotive) PlatformCar.connect(app) else null
     private val carGateway: CarPropertyGateway? =
         platformCar?.let { car ->
+            // Real climate writes: the privileged permission, supported properties, and an emulator
+            // (the privileged install is an emulator-only test setup; re-audit N5).
             val canWriteClimate =
                 ContextCompat.checkSelfPermission(app, PERMISSION_CONTROL_CAR_CLIMATE) == PackageManager.PERMISSION_GRANTED &&
-                    car.areaIds(CarIds.HVAC_TEMPERATURE_SET).isNotEmpty()
+                    car.areaIds(CarIds.HVAC_TEMPERATURE_SET).isNotEmpty() &&
+                    isEmulator()
             CarPropertyGateway(car, clock, realClimate = canWriteClimate, simulatedClimate = simulated)
         }
-    private val vehicle: VehicleGateway = carGateway ?: simulated
+
+    /**
+     * On a phone: the simulated vehicle. On Android Automotive: the car API, or, if the car service
+     * cannot be reached, a gateway with no signals and no controls, so the state is unknown (handled
+     * as moving) instead of a simulated "parked" (re-audit N2).
+     */
+    private val vehicle: VehicleGateway =
+        carGateway ?: if (automotive) UnavailableVehicleGateway else simulated
     private val resolver = DrivingStateResolver()
     private val speaker = Speaker(app)
     private val capture = AudioCapture(clock)
@@ -133,7 +146,7 @@ class AssistantViewModel(
     val state: StateFlow<UiState> = _state
 
     init {
-        viewModelScope.launch { tickDrivingSignals() }
+        viewModelScope.launch(Dispatchers.Default) { tickDrivingSignals() }
         viewModelScope.launch { speaker.available.collect { a -> _state.update { it.copy(ttsAvailable = a) } } }
         viewModelScope.launch { loadModels() }
         refreshClips()
@@ -152,10 +165,17 @@ class AssistantViewModel(
     }
 
     /** The platform's UX restrictions: null on a phone, where there is no restrictions service. */
-    private fun uxRestricted(): Boolean? = platformCar?.requiresDistractionOptimization?.value
+    private fun uxRestricted(): Boolean? =
+        when {
+            platformCar != null -> platformCar.requiresDistractionOptimization.value
+            automotive -> true
+            else -> null
+        }
 
+    /** Runs off the main thread: car-service calls can block (re-audit N4). */
     private suspend fun tickDrivingSignals() {
         while (true) {
+            carGateway?.poll()
             val signals = vehicle.latestSignals()
             val driving =
                 synchronized(resolver) {
@@ -187,9 +207,12 @@ class AssistantViewModel(
         }
     }
 
+    /**
+     * The state from the background tick's latest reading; no car-service call here. If the tick
+     * stalls, the reading ages past 1 s and the state becomes unknown (handled as moving).
+     */
     private fun drivingStateNow(): DrivingState =
         synchronized(resolver) {
-            resolver.update(vehicle.latestSignals())
             resolver.current(clock.millis())
         }.withUxRestrictions(uxRestricted())
 
@@ -214,14 +237,24 @@ class AssistantViewModel(
             }
 
             is AssistantStatus.Ready -> {
-                val loaded = withContext(Dispatchers.IO) { WhisperSpeechEngine.load(status.stt) }
+                // Load outside cancellation and close it if the view model went away meanwhile (re-audit N9).
+                val loaded = withContext(NonCancellable + Dispatchers.IO) { WhisperSpeechEngine.load(status.stt) }
+                if (!currentCoroutineContext().isActive) {
+                    loaded?.close()
+                    return
+                }
                 if (loaded == null) {
                     _state.update { it.copy(models = ModelStatus.Disabled("Speech model ${status.stt.name} could not be loaded.")) }
                     return
                 }
                 speech = loaded
                 val lmFile = status.lm
-                val lmEngine = lmFile?.let { withContext(Dispatchers.IO) { LlamaLmEngine.load(it) } }
+                val lmEngine = lmFile?.let { withContext(NonCancellable + Dispatchers.IO) { LlamaLmEngine.load(it) } }
+                if (!currentCoroutineContext().isActive) {
+                    lmEngine?.close()
+                    loaded.close()
+                    return
+                }
                 llm = lmEngine
                 val lmNote =
                     when {
@@ -298,12 +331,24 @@ class AssistantViewModel(
         runTurn(InputSource.MIC) { capture.stop() }
     }
 
-    /** The activity stopped: never keep the microphone, never act on half an utterance (audit #10). */
+    /** Whether the activity is started, i.e. whether anything on screen can be seen. */
+    @Volatile private var visible = false
+
+    fun onLifecycleStart() {
+        visible = true
+    }
+
+    /**
+     * The activity stopped: never keep the microphone, never act on half an utterance, and drop any
+     * question the user may not have heard or seen (audit #10, re-audit #4).
+     */
     fun onLifecycleStop() {
-        if (_state.value.phase == Phase.LISTENING) {
-            capture.abort()
-            _state.update { it.copy(phase = Phase.IDLE) }
-        }
+        visible = false
+        capture.abort()
+        turnJob?.cancel()
+        speaker.stop()
+        engine?.abandonConfirmation()
+        _state.update { it.copy(phase = Phase.IDLE, awaitingConfirmation = false) }
     }
 
     fun playClip(name: String) {
@@ -337,6 +382,8 @@ class AssistantViewModel(
                     val captured = audio()
                     if (captured.overflowed) {
                         // Held past the limit: reject the whole utterance rather than act on its start (audit #9).
+                        // The rejected utterance may have been an answer: end any pending question too.
+                        turnEngine.abandonConfirmation()
                         _state.update { it.copy(phase = Phase.SPEAKING, screen = null, lastSpoken = TOO_LONG) }
                         speaker.speak(TOO_LONG)
                         return@launch
@@ -376,7 +423,7 @@ class AssistantViewModel(
                 turnEngine.confirmationDelivered(id)
             }
 
-            drivingStateNow() == DrivingState.PARKED -> {
+            visible && drivingStateNow() == DrivingState.PARKED -> {
                 _state.update { it.copy(screen = ScreenContent.Text(question)) }
                 turnEngine.confirmationDelivered(id)
             }
@@ -429,4 +476,19 @@ class AssistantViewModel(
         const val TOO_LONG = "That was too long. Please say it again."
         const val PERMISSION_CONTROL_CAR_CLIMATE = "android.car.permission.CONTROL_CAR_CLIMATE"
     }
+}
+
+/** Android Automotive without a reachable car service: no signals, no controls. */
+private object UnavailableVehicleGateway : VehicleGateway {
+    override val isAvailable = false
+
+    override suspend fun read(property: ClimateProperty) = ReadResult.Unavailable
+
+    override suspend fun write(
+        property: ClimateProperty,
+        value: Int,
+        notAfterMs: Long,
+    ) = io.github.ardaulas.earshot.core.vehicle.WriteResult.Unavailable
+
+    override fun latestSignals(): io.github.ardaulas.earshot.core.vehicle.SignalSample? = null
 }

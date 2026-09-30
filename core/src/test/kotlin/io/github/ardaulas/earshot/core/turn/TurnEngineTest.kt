@@ -39,7 +39,11 @@ private class Harness(
     val vehicle: FaultInjectingGateway,
     val trace: RecordingTraceSink,
     val drivingState: DrivingStateHolder,
-)
+    val now: () -> Long,
+) {
+    /** Both capture start and end at the current virtual time. */
+    suspend fun handle(): TurnResult = engine.handle(PCM, InputSource.CLIP, now(), now())
+}
 
 private fun TestScope.harness(
     drivingState: DrivingState,
@@ -65,12 +69,12 @@ private fun TestScope.harness(
             traceSink = trace,
             config = config,
         )
-    return Harness(engine, speech, lm, vehicle, trace, stateHolder)
+    return Harness(engine, speech, lm, vehicle, trace, stateHolder) { testScheduler.currentTime }
 }
 
 /** Handles one utterance and, as the app does, reports a confirmation question as delivered. */
 private suspend fun Harness.handleAndDeliver(): TurnResult {
-    val r = engine.handle(PCM, InputSource.CLIP)
+    val r = handle()
     r.confirmationId?.let { engine.confirmationDelivered(it) }
     return r
 }
@@ -450,27 +454,27 @@ class TurnEngineTest {
         runTest {
             val acted = harness(DrivingState.PARKED)
             acted.speech.queue("Set the temperature to 19.", 0.9f)
-            acted.engine.handle(PCM, InputSource.CLIP)
+            acted.handle()
             (acted.vehicle.writeCount <= 1) shouldBe true
 
             val noChange = harness(DrivingState.PARKED)
             noChange.vehicle.write(ClimateProperty.CABIN_TEMPERATURE_C, 28)
             val before = noChange.vehicle.writeCount
             noChange.speech.queue("Make it warmer.", 0.9f)
-            noChange.engine.handle(PCM, InputSource.CLIP)
+            noChange.handle()
             (noChange.vehicle.writeCount - before <= 1) shouldBe true
 
             val failed = harness(DrivingState.PARKED)
             failed.vehicle.rejectWrites = true
             failed.speech.queue("Set the temperature to 19.", 0.9f)
-            failed.engine.handle(PCM, InputSource.CLIP)
+            failed.handle()
             (failed.vehicle.writeCount <= 1) shouldBe true
 
             val confirmed = harness(DrivingState.MOVING)
             confirmed.speech.queue("Turn off the defrost.", 0.9f)
-            confirmed.engine.handle(PCM, InputSource.CLIP)
+            confirmed.handleAndDeliver()
             confirmed.speech.queue("yes", 0.9f)
-            confirmed.engine.handle(PCM, InputSource.CLIP)
+            confirmed.handleAndDeliver()
             (confirmed.vehicle.writeCount <= 1) shouldBe true
         }
 

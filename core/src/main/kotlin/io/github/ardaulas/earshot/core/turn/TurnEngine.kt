@@ -148,6 +148,9 @@ class TurnEngine(
             if (pending?.id == confirmationId) pending = null
         }
 
+    /** Drops any pending confirmation, e.g. when the app rejects an utterance without handling it. */
+    fun abandonConfirmation() = setPending(null)
+
     /** Takes the pending confirmation out; each turn decides whether one exists afterwards. */
     private fun takePending(): Pending? =
         synchronized(lock) {
@@ -166,8 +169,8 @@ class TurnEngine(
     suspend fun handle(
         pcm16k: FloatArray,
         inputSource: InputSource,
-        utteranceEndMs: Long = clock.millis(),
-        utteranceStartMs: Long? = null,
+        utteranceEndMs: Long,
+        utteranceStartMs: Long,
     ): TurnResult =
         mutex.withLock {
             val turn = TurnRecorder(newTurnId(), inputSource, clock.nanoTime())
@@ -199,7 +202,7 @@ class TurnEngine(
         turn: TurnRecorder,
         pcm16k: FloatArray,
         utteranceEndMs: Long,
-        utteranceStartMs: Long?,
+        utteranceStartMs: Long,
     ): TurnResult {
         // This turn owns any pending confirmation: it survives only a re-prompt; everything else ends
         // it, including early returns (audit #3).
@@ -264,7 +267,7 @@ class TurnEngine(
         val delivered = prior?.deliveredAtMs
         val pendingValid =
             delivered != null &&
-                (utteranceStartMs ?: utteranceEndMs) >= delivered &&
+                utteranceStartMs >= delivered &&
                 utteranceEndMs <= delivered + config.confirmationTtlMs
         val frontDefrostOn =
             if (command is Command.SetFan) readBool(ClimateProperty.FRONT_DEFROST) else null
@@ -282,7 +285,9 @@ class TurnEngine(
         return when (verdict) {
             Verdict.Reprompt -> {
                 reprompts = 1
-                setPending(prior)
+                // Keep a pending question only if the unclear utterance was itself an answer to it;
+                // any other unclear request ends it (audit re-check #3).
+                if (command is Command.Answer) setPending(prior)
                 turn.result(verdict, Outcome.REPROMPTED, Responses.REPROMPT, null)
             }
 
@@ -378,8 +383,9 @@ class TurnEngine(
      * what was already granted stops it.
      */
     private suspend fun stillAllowed(a: Act): Boolean {
-        val now = drivingState()
         val frontDefrostOn = if (a.command is Command.SetFan) readBool(ClimateProperty.FRONT_DEFROST) else null
+        // Sampled after the last read, so nothing suspends between this and the write (audit re-check #7).
+        val now = drivingState()
         val recheck = policy.decide(PolicyInput(a.command, a.source, now, 1f, 0, false, frontDefrostOn))
         val ceiling = if (a.confirmed) Verdict.Confirm.rank else Verdict.AllowVoiceOnly.rank
         return recheck.rank <= ceiling
@@ -500,7 +506,7 @@ class TurnEngine(
         // Both checks sit immediately before the write, after every read that could have taken time.
         if (!stillAllowed(a)) return turn.result(verdict, Outcome.DISCARDED_STATE_CHANGED, Responses.STATE_CHANGED, null)
         if (clock.millis() > a.deadlineMs) return turn.result(verdict, Outcome.DISCARDED_STALE, Responses.STALE, null)
-        val result = withTimeoutOrNull(config.writeTimeoutMs) { vehicle.write(property, value) } ?: WriteResult.TimedOut
+        val result = withTimeoutOrNull(config.writeTimeoutMs) { vehicle.write(property, value, a.deadlineMs) } ?: WriteResult.TimedOut
         turn.writeResult = result
         val readBack = readInt(property)
         return when (result) {

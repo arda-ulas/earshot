@@ -23,29 +23,43 @@ class Captured(
 )
 
 /**
- * Push-to-talk capture: 16 kHz mono float PCM into a fixed buffer of at most [AudioGate.MAX_SECONDS]
- * (bounded audio buffer). Capture stops by itself at the limit and reports the overflow, so a long
- * hold never turns old words into a fresh command (audit #9). The recorder is always released, also on
- * cancellation or lifecycle loss (audit #10). Nothing is written to storage, and the buffer is cleared
- * after each utterance.
+ * Push-to-talk capture: 16 kHz mono float PCM, at most [AudioGate.MAX_SECONDS] per utterance (bounded
+ * buffer). Each utterance is its own [Session] with its own buffer and reader, so an old reader can
+ * never touch a new capture (re-audit #10). At the limit the reader stops and releases the recorder
+ * itself and marks the overflow, so a long hold never turns old words into a fresh command (audit #9).
+ * The recorder is released exactly once, also on cancellation or lifecycle loss. Nothing is written to
+ * storage, and buffers are cleared after use.
  */
 class AudioCapture(
     private val clock: MonotonicClock,
 ) {
-    private var record: AudioRecord? = null
-    private var job: Job? = null
-    private val buffer = FloatArray((AudioGate.MAX_SECONDS * AudioGate.SAMPLE_RATE).toInt())
+    private class Session(
+        val record: AudioRecord,
+        val startMs: Long,
+    ) {
+        val buffer = FloatArray((AudioGate.MAX_SECONDS * AudioGate.SAMPLE_RATE).toInt())
 
-    @Volatile private var length = 0
+        @Volatile var length = 0
 
-    @Volatile private var startMs = 0L
+        @Volatile var limitReachedAtMs: Long? = null
+        var job: Job? = null
+        private var released = false
 
-    @Volatile private var limitReachedAtMs: Long? = null
+        @Synchronized
+        fun release() {
+            if (released) return
+            released = true
+            runCatching { record.stop() }
+            record.release()
+        }
+    }
+
+    @Volatile private var session: Session? = null
 
     /** Starts capturing. The caller must hold RECORD_AUDIO. Returns false if the microphone is unavailable. */
     @SuppressLint("MissingPermission")
     fun start(scope: CoroutineScope): Boolean {
-        if (record != null) return true
+        if (session != null) return true
         val minBuffer =
             AudioRecord.getMinBufferSize(AudioGate.SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_FLOAT)
         if (minBuffer <= 0) return false
@@ -65,22 +79,21 @@ class AudioCapture(
             r.release()
             return false
         }
-        length = 0
-        limitReachedAtMs = null
-        startMs = clock.millis()
+        val s = Session(r, clock.millis())
         r.startRecording()
-        record = r
-        job =
+        session = s
+        s.job =
             scope.launch(Dispatchers.IO) {
-                while (isActive && length < buffer.size) {
-                    val n = r.read(buffer, length, minOf(CHUNK, buffer.size - length), AudioRecord.READ_BLOCKING)
-                    if (n <= 0) break
-                    length += n
-                }
-                if (length >= buffer.size) {
-                    // Limit reached: stop listening now; the utterance will be rejected as too long.
-                    limitReachedAtMs = clock.millis()
-                    runCatching { r.stop() }
+                try {
+                    while (isActive && s.length < s.buffer.size) {
+                        val n = r.read(s.buffer, s.length, minOf(CHUNK, s.buffer.size - s.length), AudioRecord.READ_BLOCKING)
+                        if (n <= 0) break
+                        s.length += n
+                    }
+                    if (s.length >= s.buffer.size) s.limitReachedAtMs = clock.millis()
+                } finally {
+                    // At the limit (or on any exit) the microphone is let go at once, even if key-up never comes.
+                    if (s.limitReachedAtMs != null) s.release()
                 }
             }
         return true
@@ -88,36 +101,29 @@ class AudioCapture(
 
     /** Stops capturing and returns what was heard, with the actual capture end time. */
     suspend fun stop(): Captured {
-        val r = record ?: return Captured(FloatArray(0), clock.millis(), clock.millis(), false)
-        record = null
+        val s = session ?: return Captured(FloatArray(0), clock.millis(), clock.millis(), false)
+        session = null
         val releasedAt = clock.millis()
         try {
-            runCatching { r.stop() }
-            withContext(NonCancellable) { job?.join() }
+            runCatching { s.record.stop() }
+            withContext(NonCancellable) { s.job?.join() }
         } finally {
-            job = null
-            r.release()
+            s.release()
         }
-        val overflowed = limitReachedAtMs != null
-        val pcm = buffer.copyOf(length)
-        buffer.fill(0f, 0, length)
-        length = 0
-        return Captured(pcm, startMs, limitReachedAtMs ?: releasedAt, overflowed)
+        val pcm = s.buffer.copyOf(s.length)
+        s.buffer.fill(0f)
+        val limit = s.limitReachedAtMs
+        return Captured(pcm, s.startMs, limit ?: releasedAt, overflowed = limit != null)
     }
 
     /** Lifecycle loss (activity stopped, key-up never came): stop and release, keep nothing. */
     fun abort() {
-        val r = record ?: return
-        record = null
-        job?.cancel()
-        job = null
-        runCatching { r.stop() }
-        r.release()
-        buffer.fill(0f)
-        length = 0
+        val s = session ?: return
+        session = null
+        s.job?.cancel()
+        s.release()
+        s.buffer.fill(0f)
     }
-
-    val isCapturing: Boolean get() = record != null
 
     private companion object {
         const val CHUNK = 1_600

@@ -233,14 +233,19 @@ What the code does:
 - Unknown or stale driving state is handled as moving, and so is drive or reverse at a standstill.
 - While moving or unknown: no assistant output on screen, replies of at most 12 words, and a spoken
   yes for visibility-reducing commands (defrost off; fan off while the front defrost is on or
-  unknown). Status text, the developer view and the debug recording caption still show; a result
-  shown while parked is removed when the car starts moving (see [docs/safety.md](docs/safety.md)).
-- Confidence below 0.5 or unknown: ask once to repeat, then stop. One write per turn, 1 s timeout,
-  no retry; the reply comes from reading the value back. An action that cannot start within 5 s of
-  the end of the utterance is discarded.
-- `RECORD_AUDIO` is the only system permission. AndroidX core also adds its own signature-level
-  permission (`DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`). There is no `INTERNET`, and only the
-  launcher activity is exported; a build check on the merged manifest enforces these two. Audio
+  unknown). Status text still shows; the developer view keeps its test controls but hides climate
+  values and the last turn, and the debug caption is hidden. A result shown while parked is not
+  rendered once the car is no longer parked, and a long parked reply is stopped.
+- Confidence below 0.5 or unknown: ask once to repeat, then stop. Negated, questioning,
+  unsupported-target or multi-part requests and words outside the command vocabulary never become
+  actions. One write per turn, no retry; the reply comes from reading the value back. The 5 s
+  deadline and the driving state are re-checked immediately before each write. On the car API the
+  1 s write timeout stops waiting but cannot interrupt a platform call that has already started.
+- Permissions: `RECORD_AUDIO`; on Android Automotive only, `CAR_SPEED`, `CAR_POWERTRAIN` and
+  `CONTROL_CAR_CLIMATE` (the last granted only to the emulator's privileged install); AndroidX core's
+  own signature-level `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`. There is no `INTERNET`, and only the
+  launcher activity is exported; a build check on the merged manifest enforces an allowlist in every
+  permission declaration form. Audio
   stays in memory for one turn. Models and native sources are pinned by SHA-256. CI has no secrets.
 
 Known residual risks include the following. Audio played while the button is held can issue comfort

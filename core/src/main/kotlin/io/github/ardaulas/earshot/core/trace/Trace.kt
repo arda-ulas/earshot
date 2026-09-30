@@ -59,16 +59,24 @@ class JsonlTraceWriter(
     private val dir: File,
     private val fileKey: () -> String,
     private val retainFiles: Int = 7,
+    /** Files older than this are deleted on every write (audit #18). */
+    private val maxAgeMs: Long = 7L * 24 * 60 * 60 * 1000,
+    /** A file stops growing at this size; later turns of that day are not stored. */
+    private val maxFileBytes: Long = 1_000_000,
+    private val wallClockMs: () -> Long = System::currentTimeMillis,
 ) : TraceSink {
     @Synchronized
     override fun write(trace: TurnTrace) {
         dir.mkdirs()
-        File(dir, "${fileKey()}.jsonl").appendText(json.encodeToString(TurnTrace.serializer(), trace) + "\n")
-        dir
-            .listFiles { f -> f.name.endsWith(".jsonl") }
-            ?.sortedByDescending { it.name }
-            ?.drop(retainFiles)
-            ?.forEach { it.delete() }
+        val file = File(dir, "${fileKey()}.jsonl")
+        if (file.length() < maxFileBytes) {
+            file.appendText(json.encodeToString(TurnTrace.serializer(), trace) + "\n")
+        }
+        val now = wallClockMs()
+        val files = dir.listFiles { f -> f.name.endsWith(".jsonl") }.orEmpty().sortedByDescending { it.name }
+        val expired = files.drop(retainFiles) + files.filter { now - it.lastModified() > maxAgeMs }
+        val failed = expired.distinct().filterNot { it.delete() || !it.exists() }
+        if (failed.isNotEmpty()) throw java.io.IOException("could not delete ${failed.size} old trace file(s)")
     }
 
     companion object {

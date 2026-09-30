@@ -9,7 +9,8 @@ import io.github.ardaulas.earshot.core.policy.DrivingState
  * 2. The latest reading is invalid (speed NaN, infinite or negative): UNKNOWN.
  * 3. Speed above zero: MOVING.
  * 4. Gear in drive or reverse: MOVING, even when stopped (fail-safe; see the ADR on fail-safe defaults).
- * 5. Gear in park: PARKED.
+ * 5. Gear in park with a known zero speed: PARKED. Park with no readable speed: UNKNOWN (audit
+ *    re-check N1: a park gear alone is not enough).
  * 6. Speed zero, continuously, for more than [parkedAfterMs]: PARKED. Zero for less: MOVING (it was
  *    just moving).
  * 7. Otherwise: UNKNOWN.
@@ -58,7 +59,7 @@ class DrivingStateResolver(
             }
 
             Gear.PARK -> {
-                DrivingState.PARKED
+                if (speed == 0.0) DrivingState.PARKED else DrivingState.UNKNOWN
             }
 
             Gear.NEUTRAL, null -> {

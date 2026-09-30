@@ -15,6 +15,15 @@ interface CarProperties {
         areaId: Int,
     ): Float?
 
+    /** The value with the time the vehicle reported it (elapsed-realtime nanoseconds), or null. */
+    fun readFloatTimed(
+        propertyId: Int,
+        areaId: Int,
+    ): Pair<Float, Long>?
+
+    /** Elapsed-realtime clock (nanoseconds) on the same time base as [readFloatTimed]. */
+    fun elapsedRealtimeNanos(): Long
+
     fun readInt(
         propertyId: Int,
         areaId: Int,

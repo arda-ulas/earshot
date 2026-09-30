@@ -34,15 +34,15 @@ class WhisperSpeechEngine private constructor(
         return mutex.withLock {
             synchronized(lock) {
                 if (closed) return@withLock Transcript("", null)
+                // Reset before the call is marked active, so an abort from close() cannot be erased (re-audit N10).
+                WhisperNative.resetAbort(handle)
                 active = true
             }
             try {
                 val text =
-                    runAbortable(
-                        dispatcher,
-                        reset = { WhisperNative.resetAbort(handle) },
-                        abort = { WhisperNative.abort(handle) },
-                    ) { WhisperNative.transcribe(handle, audio, threads, confidence) }
+                    runAbortable(dispatcher, abort = { WhisperNative.abort(handle) }) {
+                        WhisperNative.transcribe(handle, audio, threads, confidence)
+                    }
                         ?: return@withLock Transcript("", null)
                 AudioGate.transcript(text, confidence[0].takeIf { it >= 0f })
             } finally {

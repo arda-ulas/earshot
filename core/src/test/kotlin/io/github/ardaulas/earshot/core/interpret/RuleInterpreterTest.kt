@@ -271,8 +271,8 @@ class RuleInterpreterTest {
                 for (text in listOf("set the temperature to -$n", "set the temperature to $n.$frac", "set the temperature to minus $n")) {
                     val r = interpreter.interpret(text)
                     if (r is RuleResult.Matched) {
-                        // Only a plain, in-range whole number may match.
-                        (text.endsWith(" $n") && n in 16..28) shouldBe true
+                        // Only a plain, unsigned, in-range whole number may match.
+                        (text == "set the temperature to $n" && n in 16..28) shouldBe true
                     }
                 }
             }

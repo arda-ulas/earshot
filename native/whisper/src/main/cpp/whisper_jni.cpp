@@ -4,6 +4,7 @@
 #include <android/log.h>
 
 #include <atomic>
+#include <new>
 #include <string>
 #include <vector>
 
@@ -35,7 +36,11 @@ Java_io_github_ardaulas_earshot_whisper_WhisperNative_init(JNIEnv *env, jclass, 
     whisper_context *ctx = whisper_init_from_file_with_params(path, cparams);
     env->ReleaseStringUTFChars(model_path, path);
     if (ctx == nullptr) return 0;
-    auto *handle = new Handle();
+    auto *handle = new (std::nothrow) Handle();
+    if (handle == nullptr) {
+        whisper_free(ctx);
+        return 0;
+    }
     handle->ctx = ctx;
     return reinterpret_cast<jlong>(handle);
 }

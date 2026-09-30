@@ -5,6 +5,7 @@ import android.car.drivingstate.CarUxRestrictionsManager
 import android.car.hardware.CarPropertyValue
 import android.car.hardware.property.CarPropertyManager
 import android.content.Context
+import android.os.SystemClock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -29,12 +30,21 @@ class PlatformCar private constructor(
     private val ux: CarUxRestrictionsManager? =
         runCatching { car.getCarManager(Car.CAR_UX_RESTRICTION_SERVICE) as CarUxRestrictionsManager }.getOrNull()
 
+    /** True if the restrictions service could not be registered; restrictions then stay assumed. */
+    var uxFailed = false
+        private set
+
     init {
-        runCatching {
-            ux?.let { m ->
-                _requiresDistractionOptimization.value = m.currentCarUxRestrictions.isRequiresDistractionOptimization
-                m.registerListener { r -> _requiresDistractionOptimization.value = r.isRequiresDistractionOptimization }
-            }
+        // Register first, then read; any failure leaves restrictions assumed (audit re-check N3).
+        try {
+            val m = ux ?: throw IllegalStateException("no UX restrictions service")
+            m.registerListener { r -> _requiresDistractionOptimization.value = r.isRequiresDistractionOptimization }
+            _requiresDistractionOptimization.value = m.currentCarUxRestrictions.isRequiresDistractionOptimization
+        } catch (
+            @Suppress("TooGenericExceptionCaught") e: Exception,
+        ) {
+            _requiresDistractionOptimization.value = true
+            uxFailed = true
         }
     }
 
@@ -44,6 +54,17 @@ class PlatformCar private constructor(
         propertyId: Int,
         areaId: Int,
     ): Float? = read(Float::class.javaObjectType, propertyId, areaId)
+
+    override fun readFloatTimed(
+        propertyId: Int,
+        areaId: Int,
+    ): Pair<Float, Long>? =
+        runCatching {
+            val v: CarPropertyValue<Float>? = properties?.getProperty(Float::class.javaObjectType, propertyId, areaId)
+            if (v != null && v.status == CarPropertyValue.STATUS_AVAILABLE) v.value to v.timestamp else null
+        }.getOrNull()
+
+    override fun elapsedRealtimeNanos(): Long = SystemClock.elapsedRealtimeNanos()
 
     override fun readInt(
         propertyId: Int,
