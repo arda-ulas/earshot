@@ -6,6 +6,7 @@ launcher activity (SR-20).
 
 | Permission | Why | Notes |
 |---|---|---|
+| `io.github.ardaulas.earshot.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | Added by AndroidX `core` for receivers registered as not exported | A signature permission defined by the app for itself; no other app can hold it; grants nothing to the app |
 | `RECORD_AUDIO` | Push-to-talk speech capture | Requested at the first press. Capture runs only while the button (or the push-to-talk key) is held. Audio is kept in memory for one turn and never written to storage |
 
 Not requested, on purpose:

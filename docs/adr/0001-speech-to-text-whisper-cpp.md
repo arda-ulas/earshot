@@ -131,9 +131,10 @@ Bad, or not done:
 - The full 30 s encoder window costs about 0.5 s per turn (measured on the arm64 API 36 emulator on
   an Apple silicon laptop, clip input).
 - whisper.cpp checks its abort flag only after the encoder finishes and after each decoder step, not
-  during the encoder, so an aborted call does not stop at once. With the laptop heavily loaded (load
-  average about 20), the encoder took up to 6 s and some turns hit the 10 s limit. An aborted turn
-  ran for up to about 20 s before returning. Those turns asked again as designed.
+  during the encoder, so an aborted call does not stop at once. On the arm64 API 36 emulator, with
+  the Apple silicon laptop heavily loaded (load average about 20) and clip input, the encoder took up
+  to 6 s and some turns hit the 10 s limit. An aborted turn ran for up to about 20 s before
+  returning. Those turns asked again as designed.
 - Only arm64-v8a is built, on the CPU, assuming dot product and fp16 support. There is no GPU path.
 - There is no speaker verification. Anyone speaking while the button is held is transcribed (TH-1 in
   [threat-model.md](../threat-model.md)).
@@ -155,7 +156,8 @@ Bad, or not done:
     below-threshold confidence asks once, then stops.
   - [`AbortableTest`](../../core/src/test/kotlin/io/github/ardaulas/earshot/core/concurrent/AbortableTest.kt):
     cancelling calls the abort hook and waits for a blocking stand-in call to return. The native
-    abort itself is not unit-tested.
+    abort itself is not unit-tested. Until v0.2.1 the two tests in this file did not run (their
+    bodies returned a value, so JUnit skipped them); fixed, see [ai-log.md](../ai-log.md).
   - [`ModelGateTest`](../../core/src/test/kotlin/io/github/ardaulas/earshot/core/model/ModelGateTest.kt):
     speech model selection and failure.
 - [Manual test plan](../manual-test-plan.md): M-1 to M-12 pass on clips (M-7 with the caveat above)

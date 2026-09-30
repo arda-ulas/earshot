@@ -74,6 +74,7 @@ decoded once in the background after start-up; that took 8.2 s on this emulator.
 | M-16 | clip | pass | Samantha and Daniel, parked and moving: "I'm freezing." -> `{"intent":"warmer"}` -> "Raise the temperature by 2 degrees? Say yes or no." Moving + yes: "Temperature is now 23 degrees." (21 + 2, read back, voice only). Parked + no: "Okay, I won't." Language-model stage 0.5–2.0 s |
 | M-17 | clip | pass | Samantha: "Order me a pizza." -> `{"intent":"out_of_domain"}` -> refused. Daniel's clip was heard as "Automia pizza" at p 0.48, below the threshold, so it re-prompted and the model was not asked |
 | M-1, M-9 | clip | pass | Re-run with the language model loaded: unchanged |
+| Clean clone | clip | partial | Fresh clone of the v0.2.0 branch: `scripts/fetch-models.sh` downloaded both models and verified their hashes, `:core:check` and the debug build passed, and on the emulator the prefix decoded in 5.4 s and "I'm freezing" reached the confirmation question. The "yes" step was not re-run on that build: under host load speech-to-text hit its timeout and re-prompted |
 
 Findings during these runs:
 
@@ -86,7 +87,7 @@ Findings during these runs:
   are fixed, the grammar layout now has a test.
 - When the laptop was heavily loaded (load average around 20 while building), whisper's encoder took
   up to 6 s and some turns hit the 10 s speech-to-text timeout, which re-prompted as designed.
-  Whisper checks its abort flag between encoder passes, so an aborted turn can run past 10 s before
+  Whisper checks its abort flag only after the encoder finishes and after each decoder step, so an aborted turn can run past 10 s before
   it returns (up to about 20 s seen).
 - A captioned screen recording was attempted for the README. With `adb shell screenrecord` running
   (540x1200, 2 Mbit/s), speech-to-text on this emulator took 5.3–7.6 s for short commands, so the

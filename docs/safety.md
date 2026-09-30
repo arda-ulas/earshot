@@ -28,19 +28,19 @@ sources support it.
 
 | Standard | What it covers | How Earshot uses it |
 |---|---|---|
-| ISO 26262, *Road vehicles: Functional safety* | Safety-related electrical and electronic (E/E) systems in series-production road vehicles, excluding mopeds. It covers hazards caused by malfunctioning behaviour of those systems, not how well a system performs its intended function. The latest published edition is from 2018 (Parts 1 to 12). A third edition was at the draft (DIS) stage when checked in September 2026. [1] [2] | Vocabulary and practice: hazards, safety goals, requirements traced to verifying tests. |
-| ISO 21448:2022, *Safety of the intended functionality* (SOTIF) | Hazards caused by functional insufficiencies. These are gaps in how an intended function is specified at vehicle level, or specification or performance shortfalls in its E/E implementation. They can cause a hazard when nothing has failed. Reasonably foreseeable misuse is in scope. Faults covered by ISO 26262, cybersecurity threats and deliberate feature abuse are not. ISO lists it as under revision. [3] [4] | A design lens. A speech recogniser or a language model that works as built can still mishear or misread (HZ-1, HZ-2, HZ-7). |
+| ISO 26262, *Road vehicles: Functional safety* | Safety-related electrical and electronic (E/E) systems in series-production road vehicles, excluding mopeds. It covers hazards caused by malfunctioning behaviour of those systems, not how well a system performs its intended function. The latest published edition is from 2018 (Parts 1 to 12). A third edition was at the draft (DIS) stage when checked in September 2026. [1] [2] [3] [14] | Vocabulary and practice: hazards, safety goals, requirements traced to verifying tests. |
+| ISO 21448:2022, *Safety of the intended functionality* (SOTIF) | Hazards caused by functional insufficiencies. These are gaps in how an intended function is specified at vehicle level, or specification or performance shortfalls in its E/E implementation. They can cause a hazard when nothing has failed. It is aimed mainly at functions whose safety depends on situational awareness from complex sensors and processing algorithms, such as emergency intervention systems and driving automation levels 1 to 5. Reasonably foreseeable misuse is in scope. Faults covered by ISO 26262, cybersecurity threats and deliberate feature abuse are not. ISO lists it as under revision. [3] [4] | A loose design lens only. A speech recogniser or a language model that works as built can still mishear or misread (HZ-1, HZ-2, HZ-7). |
 | ISO/SAE 21434:2021, *Road vehicles: Cybersecurity engineering* | Process requirements for cybersecurity risk management across the life cycle of road-vehicle E/E systems. It does not prescribe specific technologies. It has been in systematic review since July 2026. [5] [6] | Vocabulary for [threat-model.md](threat-model.md). |
 
 ### No ASIL
 
 Under ISO 26262, an ASIL comes from a hazard analysis and risk assessment done at vehicle level. That
 analysis rates each hazardous event for severity, exposure and controllability. The result is an ASIL
-from A (least stringent) to D (most stringent), or QM when no ASIL applies. [7]
+from A (least stringent) to D (most stringent), or QM when no ASIL applies. [7] [15]
 
 Earshot has no vehicle, no item definition, no exposure data and no controllability assessment. No
-ASIL is assigned. The severities below are qualitative labels (Low, Medium, High) from the project
-plan. They are not ISO 26262 severity classes.
+ASIL is assigned. The severities below are qualitative labels (Low, Medium, High) from the author's
+project plan, which is not in this repository. They are not ISO 26262 severity classes.
 
 ## Hazards and safety goals
 
@@ -48,12 +48,19 @@ plan. They are not ISO 26262 severity classes.
 |---|---|---|---|---|---|
 | HZ-1 | Unintended action | Misrecognition, out-of-domain speech, passenger or radio speech | Medium | Every action is a bounded comfort change (temperature, fan, AC, defrost). An unwanted one is a nuisance and can pull the driver's attention. Loss of visibility is its own hazard (HZ-6). | SG-1: no vehicle action without an in-domain command above the confidence threshold |
 | HZ-2 | Wrong value ("12" heard as "21") | Speech-to-text or parsing error | Medium | Values stay inside the comfort range, so the harm is discomfort. A large wrong change invites a manual correction while driving. | SG-2: every value bounded; out-of-range means re-prompt, never a silent clamp to an extreme |
-| HZ-3 | Driver distraction | Visual output or long speech while moving | High | Eyes or attention off the road while moving is the most direct way an in-cabin assistant can contribute to a crash. | SG-3: no screen-dependent interaction while moving; short spoken responses |
+| HZ-3 | Driver distraction | Visual output or long speech while moving | High | Taking the driver's eyes or attention off the road while moving can contribute to a crash. | SG-3: no screen-dependent interaction while moving; short spoken responses |
 | HZ-4 | Wrong driving-state assumption | Signal unavailable, stale, or not yet received | High | Every moving-state protection (voice only, screen refusal, confirmation) depends on the driving state. A wrong "parked" turns all of them off at once. | SG-4: unknown driving state treated as moving |
 | HZ-5 | Stale action | The action runs long after the utterance | Low | A late action is still one the driver asked for, and still bounded. The harm is surprise. | SG-5: discard the action if it cannot run within a time budget after the utterance ends |
 | HZ-6 | Visibility loss | Defrost turned off by mistake while moving | High | A fogged windshield directly reduces the driver's view of the road. | SG-6: visibility-reducing commands need spoken confirmation while moving |
 | HZ-7 | The language model invents a command | Hallucination on the fallback path | Medium | The model can turn an unrelated sentence into an action. The vehicle changes it can reach are a subset of the comfort changes in HZ-1. | SG-7: language-model output must parse into the schema, always goes through the policy, and always needs confirmation |
 | HZ-8 | Self-trigger | The assistant hears its own speech | Low | Capture runs only while push-to-talk is held, and replies are short templated sentences. | SG-8: no capture while text-to-speech is playing (barge-in is out of scope) |
+
+The safety goals keep the plan's wording. Two details differ in the code:
+
+- SG-1: confidence counts from 0.5 inclusive (at or above the threshold).
+- SG-2: a confident, explicit out-of-range value is answered with the valid range and nothing happens
+  (SR-3). It does not get the `Reprompt` verdict. An out-of-range value heard below the confidence
+  threshold is re-prompted like any other unclear request.
 
 ## From safety goals to requirements
 
@@ -65,14 +72,14 @@ from those annotations and lists every verifying test.
 |---|---|---|
 | SG-1 | SR-1 (in domain and confident, or no action), SR-2 (re-prompt once, then stop) | unit tests |
 | SG-2 | SR-3 (bounded values, out-of-range answered with the valid range) | unit tests |
-| SG-3 | SR-4 (nothing on screen while moving or unknown), SR-5 (replies of at most 12 words) | unit tests |
+| SG-3 | SR-4 (no assistant result on screen while moving or unknown; see Known gaps for what still shows), SR-5 (replies of at most 12 words while moving or unknown) | unit tests |
 | SG-4 | SR-6 (missing, stale or ambiguous signals mean moving) | unit tests |
 | SG-5 | SR-7 (5 s action budget) | unit tests (fake clock) |
 | SG-6 | SR-8 (spoken yes for visibility-reducing commands), SR-18 (confirmation expiry and cancel) | unit tests |
 | SG-7 | SR-9 (strict parse), SR-10 (always confirmed, restricted commands), SR-11 (timeout or failure is "not understood"), SR-18 | unit tests, fault injection for SR-11 |
 | SG-8 | SR-19 (no capture while speaking) | manual test plan (M-13), not run yet |
 
-Some requirements do not come from a single safety goal:
+Some requirements do not come from a safety goal:
 
 - Fail-safe behaviour: SR-13 (vehicle connection down), SR-14 (failed write, no retry), SR-15
   (confirmation from the read-back), SR-16 (one action per turn).
@@ -90,16 +97,27 @@ The reasons behind these choices are recorded in
 ### The policy is the single decision point
 
 [`Policy.decide`](../core/src/main/kotlin/io/github/ardaulas/earshot/core/policy/Policy.kt) is a pure
-function. It has no clock, no I/O and no state. It takes the command, where the command came from
-(rules or language model), the driving state, the speech-to-text confidence, the re-prompt count,
-whether a confirmation is pending and the front defrost state. It returns one verdict.
+function. It has no clock, no I/O and no state. It takes a `PolicyInput`:
+
+- the command
+- where the command came from (rules or language model)
+- the driving state
+- the speech-to-text confidence
+- the re-prompt count
+- whether a confirmation is pending
+- the front defrost state
+
+It returns one verdict.
 
 [`TurnEngine`](../core/src/main/kotlin/io/github/ardaulas/earshot/core/turn/TurnEngine.kt) acts on that
-verdict. It is the only code that calls `VehicleGateway.write`, and it does so only after an `Allow`
-or `AllowVoiceOnly` verdict, directly or through a "yes" to a pending confirmation. Turns are
-serialized: one runs at a time.
+verdict. It is the only production code that calls `VehicleGateway.write`, and it does so only after
+an `Allow` or `AllowVoiceOnly` verdict, directly or through a "yes" to a pending confirmation. Turns
+are serialized: one runs at a time.
 
-Precedence, first match wins:
+One case is settled before the policy runs. `TurnEngine` answers a confident, explicit out-of-range
+value ("set the temperature to 35") with the valid range, and nothing is written (SR-3).
+
+Precedence in the policy, first match wins:
 
 1. A command from the language model in a category the model cannot produce (conversation or
    screen-dependent): refuse.
@@ -126,8 +144,10 @@ command that the table allows becomes a question, and a refusal stays a refusal.
 
 The language-model path has two layers. The wire format has no label for cancel, help, yes or no,
 show climate, fan changes or defrost off, so the model cannot express them. If such a command still
-reached the policy, step 1 would refuse the conversation and screen-dependent ones. The model only
-runs on a confident rule miss, so unclear audio never reaches it.
+reached the policy, step 1 would refuse the conversation and screen-dependent ones. The model runs
+only when the rules miss and the speech-to-text confidence is at or above 0.5, so audio below the
+threshold never reaches it. Confidence is a weak signal for unclear speech (see Known gaps), so some
+unclear audio can still reach the model. Every model command still needs a spoken yes.
 
 ### Deny by default
 
@@ -137,7 +157,7 @@ The simulated vehicle also rejects values outside each property's range.
 
 ### Unknown means unsafe
 
-| When this is unknown or missing | Earshot treats it as |
+| When this is unknown, missing or ambiguous | Earshot treats it as |
 |---|---|
 | Driving signals: none received, or the latest is older than 1 s | `UNKNOWN`, handled as moving |
 | Gear in drive or reverse at a standstill | moving |
@@ -145,8 +165,8 @@ The simulated vehicle also rejects values outside each property's range.
 | Speech-to-text confidence (timeout, error, no value) | too low: re-prompt once, then stop |
 | Front defrost state (could not be read) | on, so fan off counts as visibility-reducing |
 | Vehicle connection | down: writes refused, "Vehicle controls are unavailable." |
-| Language-model result (timeout, error, invalid output) | "not understood": refused, no action |
-| Model file integrity (missing, wrong size, SHA-256 mismatch) | speech model: assistant disabled; language model: fallback disabled |
+| Language-model result (timeout, error, invalid output) | not understood: refused as out of domain ("Sorry, I can't help with that."), no action |
+| Model file integrity (missing, wrong size, SHA-256 mismatch) | speech model: the next listed speech model is tried; with none valid, assistant disabled. Language model: fallback disabled |
 
 ### One action per turn
 
@@ -171,8 +191,8 @@ the maximum, 28 degrees.").
 |---|---|---|
 | Audio per utterance | at most 8 s, 16 kHz mono float, held in memory only | `AudioCapture`, `AudioGate` |
 | Audio worth transcribing | at least 0.3 s and RMS 0.003; otherwise confidence 0 and the speech model does not run | `AudioGate` |
-| Speech-to-text output | 48 tokens, single segment, greedy, English, no temperature fallback, 2 threads | `whisper_jni.cpp` |
-| Speech-to-text time | 10 s, then treated as unclear audio | `TurnConfig.sttTimeoutMs` |
+| Speech-to-text output | 48 tokens, single segment, greedy, English, no temperature fallback, 2 threads | `whisper_jni.cpp`; threads from `WhisperSpeechEngine.load` |
+| Speech-to-text time | 10 s timeout, then treated as unclear audio; under host load the aborted native call can take longer to return (see Known gaps) | `TurnConfig.sttTimeoutMs` |
 | Re-prompts | one, then stop | `Policy` |
 | Temperature | 16 to 28 °C | `Bounds.TEMP_C` |
 | Temperature change | ±1 to ±4 from the rules; ±2 from the language model | `Bounds.TEMP_DELTA`, `LmWireFormat.TEMP_STEP` |
@@ -201,25 +221,27 @@ handle.
 
 ## Degradation modes as implemented
 
-Evidence labels: **unit** means covered by unit tests; **device** means run on the emulator with
-synthetic clips (`clip`); **not-tested** means the code path exists but has not been exercised.
+Evidence labels: **unit** means covered by unit tests; **device** means run on the emulator, with
+`clip` input where audio is involved (M-14 used a corrupted model file and no audio); **not-tested**
+means the code path exists but has not been exercised.
 
 | Fault | Behaviour in the code | Evidence |
 |---|---|---|
-| Vehicle connection down / property unavailable | Driving state UNKNOWN -> moving rules; writes refused; "Vehicle controls are unavailable." | unit (SR-13), device M-11 |
+| Vehicle connection down | Driving state UNKNOWN once the last reading is older than 1 s -> moving rules; writes refused; "Vehicle controls are unavailable." | unit (SR-13), device M-11 |
 | Write rejected or timed out (1 s) | No retry; "I couldn't change the <thing>."; state re-read | unit (SR-14) |
-| Speech model missing or hash mismatch | Assistant disabled with the reason on screen; no crash | unit (ModelGateTest), device M-14 |
+| No listed speech model passes (missing, wrong size or hash mismatch) | Assistant disabled with the reason on screen; no crash. If tiny.en fails and the optional base.en passes, base.en is used | unit (ModelGateTest), device M-14 |
 | Language model missing or hash mismatch | Fallback disabled; rules keep working; reason in developer panel | unit (ModelGateTest) |
-| Speech-to-text slower than 10 s / throws | Treated as unclear: re-prompt once, then stop | unit; seen on device under host load |
-| LM timeout (10 s), error or invalid output | "Not understood": refused, no action | unit (SR-11); on device when the grammar failed to parse (fixed) |
-| TTS unavailable | Short text on screen, only when parked; nothing on screen while moving | implemented, not-tested (the image has a TTS engine) |
-| Microphone permission denied | Explains on screen and stops; no background retry | implemented, not-tested on device |
+| Speech-to-text slower than 10 s / throws | Treated as unclear: re-prompt once, then stop | unit; seen on device (clip, not scripted) under host load |
+| LM timeout (10 s), error or invalid output | Treated as not understood: refused as out of domain ("Sorry, I can't help with that."), no action | unit (SR-11); seen on device (clip) when the grammar failed to parse (fixed) |
+| TTS unavailable | Short reply text on screen, only when parked; not shown while moving | implemented, not-tested (the image has a TTS engine) |
+| Microphone permission denied | Explains on screen and stops; no background retry | implemented, not-tested |
 | Push-to-talk pressed while a turn is processing | Cancels the turn (trace outcome CANCELLED_BY_USER) | unit |
 
 Notes on the table:
 
-- When the vehicle connection drops, the driving state becomes `UNKNOWN` once the last reading is
-  more than 1 s old.
+- Only a dropped connection makes the driving state `UNKNOWN`. A single property that cannot be read
+  while the connection is up also gives "Vehicle controls are unavailable." but leaves the driving
+  state unchanged. The simulated vehicle cannot produce that case, and no test covers it.
 - The "seen on device" rows were not scripted tests. Speech-to-text passed its 10 s timeout when the
   laptop was heavily loaded, and the language-model path refused every indirect request while its
   grammar failed to parse. Both details are in [manual-test-plan.md](manual-test-plan.md).
@@ -231,11 +253,14 @@ Notes on the table:
 ### What Earshot does
 
 - While the driving state is moving or unknown, results are voice only. The turn result carries no
-  screen content (SR-4).
+  screen content (SR-4). A result already shown while parked is not cleared when the vehicle starts
+  moving (see Known gaps).
 - Screen-dependent requests are refused while moving, with a short spoken summary instead: "I can't
   show that while driving. It's 21 degrees, fan 2." (SR-4; M-4 on clips).
-- Replies spoken while moving are at most 12 words. A unit test checks every reply the engine can
-  speak while moving (SR-5). The full help text is longer and is only used when parked.
+- Replies spoken while moving are at most 12 words. A unit test checks the reply templates the engine
+  speaks while moving against that limit (SR-5); the speed reply is checked from 0 to 250 km/h. The
+  out-of-range and write-failed replies are not in that test yet; both are at most 11 words today.
+  The full help text is longer and is only used when parked.
 - Visibility-reducing commands need a spoken yes while moving (SR-8).
 - Interaction is push-to-talk. The driver starts each turn, can cancel a turn in progress by pressing
   again, and can say "never mind" to drop a pending question.
@@ -246,9 +271,10 @@ NHTSA's *Visual-Manual Driver Distraction Guidelines for In-Vehicle Electronic D
 78 FR 24818, 26 April 2013; clarified at 79 FR 55530, 16 September 2014) are nonbinding, voluntary
 guidelines for built-in, visual-manual interfaces in light vehicles. [8] [9]
 
-- Under their eye-glance test, a task should be locked out while driving unless, for at least 21 of 24
-  test participants, the mean glance away from the road is 2.0 s or less, no more than 15 percent
-  (rounded up) of glances exceed 2.0 s, and total eyes-off-road time is 12.0 s or less.
+- Under their eye-glance test, a task should be locked out while driving unless three criteria hold
+  for at least 21 of 24 test participants. The mean glance away from the road is 2.0 s or less. No
+  more than 15 percent (rounded up) of glances exceed 2.0 s. Total eyes-off-road time is 12.0 s or
+  less.
 - They also recommend always locking out some tasks while driving. These include manual text entry
   for messaging or browsing, video, automatically scrolling text, and text to be read such as messages
   or web pages.
@@ -258,9 +284,12 @@ guidelines for built-in, visual-manual interfaces in light vehicles. [8] [9]
   apply to Earshot.
 
 Earshot does not measure glances and has not been tested with either NHTSA protocol. Its own rule is
-simpler: nothing on screen while moving or unknown, and screen-dependent requests refused by voice.
+simpler: a turn decided while moving or unknown puts nothing on screen, and screen-dependent requests
+are refused by voice. The single screen is not blank while moving. Status text and the developer
+panel still show, and a result shown while parked stays until the next turn (see Known gaps).
 Its choice to treat drive or reverse at a standstill as moving points the same way as NHTSA's
-definition of driving, although Earshot has no propulsion signal.
+definition of driving, although Earshot has no propulsion signal. Its neutral-at-standstill rule
+(parked after 2 s) is looser than NHTSA's definition.
 
 ### Background: Android Automotive UX restrictions (not integrated yet)
 
@@ -278,8 +307,8 @@ a standstill counts as moving. It treats a missing or stale reading as moving. T
 opposite before its first driving-state data arrives: its documentation says restrictions are not
 enforced then, and the system behaves as if parked. [10]
 
-Reading real driving state and UX restrictions through the Car API comes in a later phase, on the
-Android Automotive emulator.
+Reading real driving state and UX restrictions through the Car API is planned for a later phase, on
+the Android Automotive emulator.
 
 ## Verification
 
@@ -295,15 +324,20 @@ Android Automotive emulator.
   and fail if the merged manifest requests `INTERNET` or exports anything but the launcher activity
   (SR-20). The check was negative-tested: adding `INTERNET` failed the build.
 - **Manual test plan.** [manual-test-plan.md](manual-test-plan.md) covers what unit tests cannot: the
-  real speech model, the app and the audio path. Every result is labelled `clip` (synthetic audio from
-  macOS `say`, voices Samantha and Daniel) or `mic` (a person speaking). On 2026-09-29, M-1 to M-12,
-  M-16 and M-17 passed on clips, and M-14 (a corrupted model file, no audio) passed. M-13 and M-15 need
-  a person at the microphone and have not been run. There are no `mic` results yet.
-- **Latency.** All timings were measured on the arm64 API 36 emulator on an Apple silicon laptop. The
-  speech-to-text stage typically took 2.2 to 3.4 s, and the language-model stage 0.5 to 2.0 s. These
-  are not in-vehicle or on-phone figures. Every trace records the host it was measured on.
-- **Language-model evaluation.** The shipped model and format scored 28/32 on a held-out set of typed
-  indirect requests, with no wrong-direction answers. The set is small and is text, not speech. See
+  real speech model, the app and the audio path. Every result with audio is labelled `clip` (synthetic
+  audio from macOS `say`, voices Samantha and Daniel) or `mic` (a person speaking). On 2026-09-29, M-1
+  to M-12 (M-7 with a caveat, see Known gaps), M-16 and M-17 passed on clips, and M-14 (a corrupted
+  model file, no audio) passed. M-13 and M-15 need a person at the microphone and have not been run.
+  There are no `mic` results yet.
+- **Latency.** All timings were measured on the arm64 API 36 emulator on an Apple silicon laptop, with
+  `clip` input. The speech-to-text stage took 2.2 to 4.4 s per clip, typically 2.2 to 3.4 s, and the
+  language-model stage 0.5 to 2.0 s. These are not in-vehicle or on-phone figures. Every trace records
+  the host it was measured on.
+- **Language-model evaluation.** The shipped model and format scored 28/32 on a held-out set of 32
+  typed utterances, with no wrong-direction answers. The set has 17 in-domain items, mostly indirect
+  requests, and 15 out-of-domain items, of which the model refused 14. Prompts were tuned on a
+  separate 30-item dev set. One item is about 3 points. An audit found minor leakage, and one test
+  item is close to a prompt example. The sets are small and are text, not speech. See
   [lm-eval/README.md](lm-eval/README.md) and
   [adr/0005-language-model-choice.md](adr/0005-language-model-choice.md).
 
@@ -323,20 +357,27 @@ Android Automotive emulator.
   manual test plan, on clips.
 - **The screen rule covers assistant output only.** SR-4 applies to the result content of a turn. The
   single screen still shows status text while moving, such as "Voice only while driving" and "Waiting
-  for yes or no". The developer panel, a test tool for the simulated vehicle, shows the last transcript
-  and reply in every driving state, and so does the debug build's recording caption. Android
-  Automotive's `UX_RESTRICTIONS_NO_VOICE_TRANSCRIPTION` flag forbids showing voice transcriptions while
-  restricted. [12] The panel would need to respect it once the Car API is integrated.
-- **The single path to the vehicle is kept by review.** Today there is one call to
-  `VehicleGateway.write`, in `TurnEngine`. No automated check enforces that.
+  for yes or no". A result shown while parked (text or the climate panel) stays on screen after the
+  vehicle starts moving, until the next turn finishes; nothing clears it on a change of driving
+  state. The developer panel, a test tool for the simulated vehicle, shows the last transcript and
+  reply in every driving state. The debug build's recording caption shows the clip's scripted text
+  and the reply in every driving state. Android Automotive's `UX_RESTRICTIONS_NO_VOICE_TRANSCRIPTION`
+  flag forbids showing voice transcriptions while restricted. [12] The panel would need to respect it
+  once the Car API is integrated.
+- **The single path to the vehicle is kept by review.** Today the main (non-test) sources have one
+  call to `VehicleGateway.write`, in `TurnEngine`. No automated check enforces that.
 - **Simulated vehicle.** Driving signals come from scripted scenarios. The value bounds are those of
-  the simulated cabin; the real property ranges will be checked on the Android Automotive emulator.
-- **Late re-prompts under host load.** Whisper checks its abort flag between encoder passes. With the
-  laptop heavily loaded, an aborted speech-to-text call took up to about 20 s to return, so the
-  re-prompt came late. No action ran: the transcript was empty.
+  the simulated cabin; the real property ranges are to be checked on the Android Automotive emulator
+  in a later phase.
+- **Late re-prompts under host load.** whisper.cpp checks its abort flag only after the encoder
+  finishes and after each decoder step, not during the encoder. On the arm64 API 36 emulator, with
+  the Apple silicon laptop heavily loaded (load average about 20), an aborted speech-to-text call
+  took up to about 20 s to return, so the re-prompt came late. No action ran: the transcript was
+  empty.
 - **Language-model misreads remain.** On the held-out set, "good morning" became a gear query and "it's
   muggy" became cooler. The confirmation question is the control, not the model's accuracy.
-- **A short hazard list.** The eight hazards come from the project plan. There is no exposure or
+- **A short hazard list.** The eight hazards come from the author's project plan, which is not in this
+  repository. There is no exposure or
   controllability rating, no systematic search for situations where the function, working as built, is
   insufficient, and no independent review.
 - **Out of scope in this phase.** Barge-in, speaker verification (see TH-1 in
@@ -360,3 +401,5 @@ Checked on 2026-09-29.
 11. AOSP, consuming driving state and UX restrictions: https://source.android.com/docs/automotive/driver_distraction/consume
 12. `CarUxRestrictions` reference: https://developer.android.com/reference/android/car/drivingstate/CarUxRestrictions
 13. Android Automotive OS parked apps: https://developer.android.com/training/cars/parked/automotive-os
+14. ISO 26262-3:2018, concept phase and nominal performance: https://committee.iso.org/standard/68385.html
+15. NHTSA report (ASIL A to D): https://rosap.ntl.bts.gov/view/dot/55819/dot_55819_DS1.pdf

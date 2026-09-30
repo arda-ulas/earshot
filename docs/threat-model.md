@@ -3,15 +3,18 @@
 This is a lightweight threat analysis of Earshot Phase 1 as implemented. It lists what is worth
 protecting, how data moves, the threats, what the code does about each one, and the risk that is
 left. It is informed by ISO/SAE 21434 concepts and uses the STRIDE categories (spoofing, tampering,
-repudiation, information disclosure, denial of service, elevation of privilege) as prompts. It is not
-a cybersecurity case, and the project claims no compliance with any standard or regulation (see
+repudiation, information disclosure, denial of service, elevation of privilege) as prompts. It does
+not score or rank risks; residual risk is described in words. It is not an assessment against any
+standard, and the project claims no compliance with any standard or regulation (see
 [Standards and regulations](#standards-and-regulations)).
 
-It describes the code at v0.2.0. v0.2.1 changes only documentation. Hazards and safety goals are in
-[safety.md](safety.md). The requirements that come from these threats (SR-1, SR-12, SR-20) are in
-[requirements.md](requirements.md), and the tests that verify them are listed in
-[traceability.md](traceability.md). The design decisions behind several mitigations are in
-[ADR 0003](adr/0003-fail-safe-defaults.md) (fail-safe defaults) and
+It describes the code at v0.2.1. Compared with v0.2.0, v0.2.1 adds documentation, Dependabot ignore
+rules for AndroidX updates that need compileSdk 37, and a debug-only on-screen caption for screen
+recordings (text read from `clips/captions.tsv`). It does not change the speech pipeline, the policy
+or the native code. Hazards and safety goals are in [safety.md](safety.md). The requirements that
+come from these threats (SR-1, SR-12, SR-20) are in [requirements.md](requirements.md), and the tests
+that verify them are listed in [traceability.md](traceability.md). The design decisions behind
+several mitigations are in [ADR 0003](adr/0003-fail-safe-defaults.md) (fail-safe defaults) and
 [ADR 0004](adr/0004-language-model-gating.md) (language-model gating).
 
 ## Scope
@@ -31,7 +34,11 @@ In scope:
 
 Out of scope in this phase:
 
-- A real vehicle, the car API and a privileged install. These come in a later phase (see TH-3).
+- A real vehicle, the Android Automotive car API and a privileged install. None of them exists in
+  this phase. The Android Automotive OS emulator and the car API are a later phase (see TH-3).
+  Nothing in this project runs in a real vehicle.
+- Devices other than the API 36 emulator. The app's minSdk is 29, so it installs on older Android
+  versions. Their storage and permission rules are not analysed here.
 - Network attacks on the running app. It has no `INTERNET` permission.
 - The security of the Android platform, the emulator and the host laptop.
 - An attacker with root on the device. `adb` access is noted where it matters but not defended
@@ -53,7 +60,7 @@ A text sketch of one push-to-talk turn and the side flows. `TB-n` marks a trust 
 in the table after the sketch.
 
 ```
-cabin sound
+sound at the emulator's microphone (in this phase, the host laptop's microphone)
   |  TB-1: captured only while push-to-talk is held
   |        (on-screen button, or F2 / voice-assist key standing in for a steering-wheel button)
   v
@@ -63,6 +70,7 @@ AudioGate (Kotlin): too short or too quiet -> confidence 0, not transcribed
   |  TB-2: Kotlin -> native code over JNI
   v
 whisper.cpp, tiny.en -> transcript + confidence
+  (base.en instead, if tiny.en fails its check and a valid base.en is on the device)
   v
 RuleInterpreter (hand-written Kotlin)
   |  only on a confident rule miss
@@ -84,21 +92,22 @@ reply built in Kotlin from the read-back value -> Android TextToSpeech (no captu
 Side flows
   traces:  TurnEngine -> JsonlTraceWriter -> app-private files/traces/<date>.jsonl (newest 7 files kept)
   models:  host: scripts/fetch-models.sh downloads and checks size and SHA-256
-           TB-4: adb push -> app external files directory, models/
+           TB-4: scripts/push-models.sh (adb push) -> app external files directory, models/
            -> ModelGate checks size and SHA-256 again -> the native libraries load the files
-  clips:   debug builds only. host: scripts/make-clips.sh
-           TB-4: adb push -> app external files directory, clips/
+  clips:   debug builds only. host: scripts/make-clips.sh writes WAVs and captions.tsv
+           TB-4: scripts/push-models.sh --clips (adb push) -> app external files directory, clips/
            -> WavReader (Kotlin) -> the same pipeline from AudioGate on, traced as CLIP
+           -> captions.tsv text shown on screen in the debug recording caption
   IPC:     TB-5: other apps -> MainActivity (the launcher, the only exported component)
   build:   TB-6: Gradle plugins and libraries, native source tarballs, GitHub Actions -> local and CI builds
 ```
 
 | Boundary | What crosses it |
 |---|---|
-| TB-1 Cabin to microphone | Any sound while the button is held: the driver, a passenger, a radio, a played recording. |
+| TB-1 Room to microphone (the intended setting is a car cabin) | Any sound while the button is held: the person speaking, other people, a radio, a played recording. |
 | TB-2 Kotlin to native code | Audio samples, the fixed prompt, the request text, the grammar and model file paths. The native code is C/C++ in the same process. |
 | TB-3 Language model to Kotlin | Untrusted text, handled like user input. |
-| TB-4 Host to device storage | Model files and, for debug builds, WAV clips, pushed over `adb` into the app's external files directory. |
+| TB-4 Host to device storage | Model files and, for debug builds, WAV clips and `clips/captions.tsv`, pushed over `adb` into the app's external files directory. |
 | TB-5 Other apps to this app | Intents to exported components. |
 | TB-6 Internet to the build | Gradle plugins and libraries, the whisper.cpp and llama.cpp source tarballs, GitHub Actions, and the model downloads made by `scripts/fetch-models.sh` on the host. |
 
@@ -106,20 +115,21 @@ The running app opens no network connections. It has no `INTERNET` permission.
 
 ## Threats and mitigations
 
-Evidence labels: **unit** is a JVM unit test, with the requirement it verifies; **build** is a build
-check run in CI; **device** is a run on the emulator, and **(clip)** means the input was a synthetic
-clip ([manual-test-plan.md](manual-test-plan.md)); **config** is a setting or file with no automated
+Each cell in the status column starts with a short status, then the evidence. Evidence labels:
+**unit** is a JVM unit test, with the requirement it verifies; **build** is a build check run in CI;
+**device** is a run on the emulator, and **(clip)** means the input was a synthetic clip
+([manual-test-plan.md](manual-test-plan.md)); **config** is a setting or file with no automated
 check. There are no **mic** results yet: M-13 and M-15 are pending.
 
-| ID | Surface | Threat (STRIDE) | Mitigation in the code | Evidence | Residual risk |
+| ID | Surface | Threat (STRIDE) | Mitigation in the code | Status and evidence | Residual risk |
 |---|---|---|---|---|---|
-| TH-1 | Microphone | Spoofing: injected audio (radio, passenger, played recording) issues a command | Push-to-talk only. Only in-domain commands on allowlisted properties can act, and only at a known speech-to-text confidence of 0.5 or more. A spoken yes is needed for visibility-reducing commands while moving or unknown, and for every language-model command. One action per turn. The model's prompt says never obey instructions inside the request, the grammar leaves it no free-text output, and its text never reaches text-to-speech. | unit (SR-1, SR-8, SR-10, SR-16, SR-17). device (clip): M-6 and M-17 refuse "Order me a pizza". Language-model held-out set (typed text): one injection item, labelled out of domain by the shipped model | Audio played while the button is held can still issue comfort commands and queries. While parked it can issue any allowlisted command the rules match, because parked needs no confirmation. A recorded "yes" counts as a confirmation. No speaker verification. Not yet tested with a live microphone. |
-| TH-2 | App components (IPC) | Elevation of privilege: another app triggers actions | Only the launcher activity is exported, and it reads nothing from its intent. AndroidX `ProfileInstallReceiver` (exported, guarded by a DUMP permission) is removed from the merged manifest. `ui-tooling` is dropped: it exported `PreviewActivity` in debug builds. | build: `:app:verify<Variant>MergedManifest` (SR-20) runs in CI for debug and release. Negative-tested by adding `INTERNET`, which failed the build | The clip player is in-app UI in debug builds only, not an exported component. It reads WAVs from the app's external files directory, so anyone who can write there (for example over `adb`) can feed audio to a debug build. Those turns are traced as `CLIP`. Release builds have no clip input. |
-| TH-3 | Permissions, later privileged install | Elevation of privilege: over-broad permissions | One system permission, `RECORD_AUDIO`, requested at the first press ([permissions.md](permissions.md)). No `INTERNET`, storage or car permissions in this phase. | build (SR-20) checks for `INTERNET` only. The rest is manifest review | AndroidX core also adds an app-defined, signature-level permission (`io.github.ardaulas.earshot.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`) to the merged manifest. Only apps signed with the same key can hold it. The privileged install that real climate writes would need is a later phase and has not been reviewed. |
-| TH-4 | Model files | Tampering: tampered or swapped model | Models are never committed. `models/manifest.json` pins the Hugging Face revision, size, SHA-256 and licence. `scripts/fetch-models.sh` checks them after download, and the app checks size and SHA-256 again before loading (`ModelGate`). No valid speech model: the assistant is disabled with the reason on screen. Invalid language model: only the fallback is disabled. | unit (SR-12, fault injection). device: M-14, one byte of the speech model changed on the device; assistant disabled with the reason, no crash | Check and load are two steps: the app hashes the file, then the native library opens it again by path. A swap between the two is not detected. The pins show that a file is the one the author chose. They do not vouch for the upstream file itself. |
-| TH-5 | Dependencies and build | Tampering: malicious or vulnerable dependency, tampered Gradle wrapper | Versions in one catalog (`gradle/libs.versions.toml`). whisper.cpp and llama.cpp pinned by release tag and tarball SHA-256 (CMake `FetchContent` with `URL_HASH`), with only their core libraries built (tests, examples, tools and servers off). Gradle wrapper checksum validated in CI (`gradle/actions/setup-gradle`). Dependabot checks Gradle and GitHub Actions weekly. | config | No Gradle dependency verification metadata and no SBOM yet (planned for the release phase). Actions are referenced by major version tag, not by commit SHA. Dependabot ignores some AndroidX updates that need compileSdk 37 (`.github/dependabot.yml`), so those libraries can fall behind. The native code has not been fuzzed. |
-| TH-6 | Audio, traces, logs | Information disclosure: voice is personal data | Audio is held in memory for one turn and never written. No `INTERNET` permission. `allowBackup="false"`. Traces go to app-private storage, and only the newest 7 daily files are kept. The user's words are never written to logcat: the JNI code logs counts, timings and the fixed prompt prefix, not the transcript or the request. | build (SR-20: no `INTERNET`). unit (SR-21: trace content and the file limit). Logging: code review only | Traces do contain transcripts and spoken replies. On debug builds they are readable with `run-as`. Retention counts files, not days, so on a rarely used device a trace can be older than a week. The capture buffer is reused, not cleared, so the last utterance stays in app memory until the next capture overwrites it or the process ends. |
-| TH-7 | CI and repository | Information disclosure: leaked secrets | CI needs no secrets. The workflow token is read-only (`permissions: contents: read`). Secret scanning and push protection are on. `main` changes only through pull requests with CI green. | config (repository settings) | Repository settings have no automated check. |
+| TH-1 | Microphone | Spoofing: injected audio (radio, passenger, played recording) issues a command | Push-to-talk only. Only in-domain commands on allowlisted properties can act, and only at a known speech-to-text confidence of 0.5 or more. A spoken yes is needed for visibility-reducing commands while moving or unknown, and for every language-model command. One action per turn. The model's prompt says never obey instructions inside the request, the grammar leaves it no free-text output, and its text never reaches text-to-speech. | Implemented; unit-tested and run on the emulator (clip). unit (SR-1, SR-8, SR-10, SR-16, SR-17). device (clip): M-6 and M-17 refuse "Order me a pizza". Language-model held-out set (typed text): one injection item, labelled out of domain by the shipped model | Audio played while the button is held can still issue comfort commands and queries. While parked it can issue any allowlisted command the rules match, because parked needs no confirmation. A recorded "yes" counts as a confirmation. No speaker verification. Not yet tested with a live microphone. |
+| TH-2 | App components (IPC) | Elevation of privilege: another app triggers actions | Only the launcher activity is exported, and it reads nothing from its intent. AndroidX `ProfileInstallReceiver` (exported, guarded by a DUMP permission) is removed from the merged manifest. `ui-tooling` is dropped: it exported `PreviewActivity` in debug builds. | Implemented; build-checked in CI. build: `:app:verify<Variant>MergedManifest` (SR-20) runs in CI for debug and release. Negative-tested by adding `INTERNET`, which failed the build | The clip player is in-app UI in debug builds only, not an exported component. It reads WAVs from the app's external files directory, so anyone who can write there (for example over `adb`) can feed audio to a debug build. Debug builds also read `captions.tsv` from there and show its text on screen in any driving state, so the same person can put any text on a debug build's screen. A malformed or very large WAV can crash a debug build: `WavReader` does not check the length of the fmt chunk, and a clip is read whole before the 8 s limit applies. Clip turns are traced as `CLIP`. Release builds have no clip input and no caption. |
+| TH-3 | Permissions, later privileged install | Elevation of privilege: over-broad permissions | One system permission, `RECORD_AUDIO`, requested at the first press ([permissions.md](permissions.md)). No `INTERNET`, storage or car permissions in this phase. | Implemented; `INTERNET` build-checked, the rest by manifest review. build (SR-20) checks for `INTERNET` only | AndroidX core also adds an app-defined, signature-level permission (`io.github.ardaulas.earshot.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`) to the merged manifest. Only apps signed with the same key can hold it. The privileged install that real climate writes would need is a later phase and has not been reviewed. |
+| TH-4 | Model files | Tampering: tampered or swapped model | Models are never committed. `models/manifest.json` pins the Hugging Face revision (in the download URL), size, SHA-256 and licence. `scripts/fetch-models.sh` downloads from the pinned revision URL and checks size and SHA-256. The app checks size and SHA-256 again before loading (`ModelGate`). No valid speech model: the assistant is disabled with the reason on screen. Invalid language model: only the fallback is disabled. | Implemented; unit-tested and run on the emulator. unit (SR-12, fault injection). device: M-14, one byte of the speech model changed on the device; assistant disabled with the reason, no crash | Check and load are two steps: the app hashes the file, then the native library opens it again by path. A swap between the two is not detected. The pins show that a file is the one the author chose. They do not vouch for the upstream file itself. |
+| TH-5 | Dependencies and build | Tampering: malicious or vulnerable dependency, tampered Gradle wrapper | Versions in one catalog (`gradle/libs.versions.toml`). whisper.cpp and llama.cpp pinned by release tag and tarball SHA-256 (CMake `FetchContent` with `URL_HASH`), with only their core libraries built (tests, examples, tools and servers off). Gradle wrapper JAR checksum validated in CI (`gradle/actions/setup-gradle`). Dependabot checks Gradle and GitHub Actions weekly. | Implemented; partly build-checked. build: the native tarball SHA-256 (`URL_HASH`, both modules are built by `:app:assembleDebug`) and the wrapper validation run in every CI build. config: the version catalog and Dependabot | No Gradle dependency verification metadata and no SBOM yet (planned for the release phase). The Gradle distribution itself is not pinned: `gradle-wrapper.properties` has no `distributionSha256Sum`. Actions are referenced by major version tag, not by commit SHA. Dependabot ignores some AndroidX updates that need compileSdk 37 (`.github/dependabot.yml`), so those libraries can fall behind. The native code has not been fuzzed. |
+| TH-6 | Audio, traces, logs | Information disclosure: voice is personal data | Audio is kept only in app memory and never written to storage. No `INTERNET` permission. `allowBackup="false"`. Traces go to app-private storage, and only the newest 7 daily files are kept. The user's words are never written to logcat: the JNI code logs counts, timings and the fixed prompt prefix, not the transcript or the request. | Implemented; partly tested. build (SR-20: no `INTERNET`). unit (SR-21: trace fields, and the retention logic tested with a limit of 2; the default of 7 is set in `JsonlTraceWriter` and not tested). Logging: code review only | Traces do contain transcripts and spoken replies. On debug builds they are readable with `run-as`. Retention counts files, not days, so on a rarely used device a trace can be older than a week. `allowBackup="false"` stops cloud backup, but for apps targeting Android 12 or later it does not stop device-to-device transfer on devices from some manufacturers, and the app sets no `dataExtractionRules` ([Android 12 behaviour changes](https://developer.android.com/about/versions/12/behavior-changes-12)). Traces could move to a new device that way. The 8 s capture buffer is reused and never cleared. A later, shorter capture overwrites only its own length, so parts of earlier utterances can stay in app memory while the app runs. Copies handed to speech-to-text stay until they are garbage-collected. |
+| TH-7 | CI and repository | Information disclosure: leaked secrets | CI needs no secrets. The workflow token is read-only (`permissions: contents: read`). Secret scanning and push protection are on. `main` changes only through pull requests with CI green. | Config only, no automated check. config (repository settings and the workflow file) | Repository settings have no automated check. |
 
 ### TH-1: what injected speech can reach
 
@@ -136,11 +146,11 @@ check. There are no **mic** results yet: M-13 and M-15 are pending.
   shipped model labelled that item out of domain. It was one typed item, so it says little about
   spoken attacks.
 - **Confidence.** Unknown confidence, or confidence below 0.5, leads to one re-prompt and then a stop.
-  This filters unclear audio, and even there it is a weak signal (M-7 in
+  This filters unclear audio, and even there it is a weak signal (M-7, clip, in
   [manual-test-plan.md](manual-test-plan.md)). It does nothing against clear speech from another
   source.
 
-### TH-3: the later car phase
+### TH-3: the later Android Automotive OS phase
 
 On Android Automotive OS, reading or writing the climate properties `HVAC_TEMPERATURE_SET`,
 `HVAC_FAN_SPEED`, `HVAC_DEFROSTER` and `HVAC_AC_ON` needs `android.car.permission.CONTROL_CAR_CLIMATE`,
@@ -160,37 +170,61 @@ phase keeps simulated writes and says so.
 
 ### TH-6: what a trace holds
 
-Each turn is one JSON line with: turn ID, input source (`MIC` or `CLIP`), host (device, emulator
-flag, ABI, and a note that latency is not an in-vehicle figure), driving state, transcript,
-speech-to-text confidence, command, command source, language-model outcome, verdict, outcome, the
-spoken reply, and per-stage timings. It holds no audio. On a debug build, a trace file can be read
-with `adb shell run-as io.github.ardaulas.earshot cat files/traces/<date>.jsonl`.
+Each turn is one JSON line. It holds:
+
+- turn ID;
+- input source (`MIC` or `CLIP`);
+- host: device, emulator flag, ABI, and a note that latency is not an in-vehicle figure;
+- driving state;
+- transcript and speech-to-text confidence;
+- command and command source;
+- language-model outcome;
+- verdict and outcome;
+- the spoken reply;
+- per-stage timings.
+
+It holds no audio. On a debug build, a trace file can be read with
+`adb shell run-as io.github.ardaulas.earshot cat files/traces/<date>.jsonl`.
 
 ## Not covered by the table
 
 - **Repudiation.** Traces are plain JSONL written by the app, with no signature or hash chain. They
   are a debugging record, not tamper-evident evidence of what happened.
 - **Denial of service.** Speech-to-text on long or unclear audio can hold up a turn. The turn engine
-  gives up after 10 s and re-prompts. whisper.cpp checks its abort flag only between encoder passes,
-  so under heavy host load an aborted turn has taken up to about 20 s to return (measured on the
-  arm64 API 36 emulator on an Apple silicon laptop). The result is a delay with no action. Pressing
-  push-to-talk while a turn is processing cancels it.
+  gives up after 10 s and re-prompts. whisper.cpp checks its abort flag only after a whole encoder
+  or decoder pass completes, so a running encoder pass cannot be interrupted. Under heavy host load
+  (load average about 20), an aborted turn took up to about 20 s to return (clip input, measured on
+  the arm64 API 36 emulator on an Apple silicon laptop). The result is a delay with no action.
+  Pressing push-to-talk while a turn is processing cancels it.
 
 ## Not done yet
 
 - **Gradle dependency verification metadata.** Checksums of Gradle plugins and libraries are not
   pinned; there is no `gradle/verification-metadata.xml`. Planned for the release phase.
+- **Gradle distribution checksum.** `gradle-wrapper.properties` has no `distributionSha256Sum`
+  (TH-5).
+- **Actions pinned by commit SHA.** Workflows reference actions by major version tag (TH-5).
 - **SBOM.** No software bill of materials is produced. Planned for the release phase.
 - **Speaker verification.** The assistant does not check who is speaking (TH-1).
-- **Privileged-install review for the later car phase.** Permissions, the privapp-permissions
-  allowlist and what a privileged app could reach have not been reviewed, because none of it exists
-  yet (TH-3).
+- **Microphone tests.** M-13 and M-15 need a person at the microphone and have not been run (TH-1).
+- **Model check and load in one step.** The app hashes a model file, then the native library opens
+  it again by path. A swap in between is not detected (TH-4).
+- **Device-to-device transfer rules.** The app sets no `dataExtractionRules`, so traces are not
+  excluded from device-to-device transfer (TH-6).
+- **Tamper-evident traces.** Traces have no signature or hash chain (Repudiation).
+- **Privileged-install review for the later Android Automotive OS phase.** Permissions, the
+  privapp-permissions allowlist and what a privileged app could reach have not been reviewed,
+  because none of it exists yet (TH-3).
 - **Fuzzing of the native parsers.** This project has not fuzzed whisper.cpp's model loader or
-  llama.cpp's GGUF loader, tokenizer and GBNF grammar parser. What reaches them is narrow: model files
-  must match the pinned SHA-256 first, the grammar is a fixed string in `LmWireFormat.kt`, the request
-  text is one short transcript (whisper.cpp output is capped at 48 tokens), and audio reaches
-  whisper.cpp as an array of samples, not as a file. Clip WAVs in debug builds are parsed in Kotlin
-  by `WavReader`.
+  llama.cpp's GGUF loader, tokenizer and GBNF grammar parser. What reaches them is narrow. Model
+  files must match the pinned SHA-256 first. The grammar is a fixed string in `LmWireFormat.kt`. The
+  request text is one short transcript, because whisper.cpp output is capped at 48 tokens. Audio
+  reaches whisper.cpp as an array of samples, not as a file.
+- **Clip parsing in debug builds.** Clip WAVs are parsed in Kotlin by `WavReader`. Since v0.2.1 it
+  checks the fmt chunk length, bounds the sample rate (8-96 kHz) and channel count, and reports any
+  malformed header as an `IOException` (unit-tested, including truncation at every length). A clip is
+  still read whole before the 8 s limit applies, so a very large clip can exhaust memory in a debug
+  build (TH-2).
 
 ## Standards and regulations
 
@@ -199,23 +233,24 @@ cybersecurity engineering: a threat analysis that lists assets, threats, mitigat
 risk.
 
 - **ISO/SAE 21434:2021**, *Road vehicles — Cybersecurity engineering*, sets engineering requirements
-  for cybersecurity risk management across the concept, product development, production, operation,
-  maintenance and decommissioning of electrical and electronic (E/E) systems in road vehicles,
-  including their components and interfaces. It defines process requirements and a common vocabulary
-  and does not prescribe specific technologies
+  for cybersecurity risk management in the electrical and electronic (E/E) systems of road vehicles,
+  including their components and interfaces. It covers the whole life cycle: concept, product
+  development, production, operation, maintenance and decommissioning. It defines process
+  requirements and a common vocabulary and does not prescribe specific technologies
   ([SAE summary, archived](https://web.archive.org/web/20221220203245/https://www.sae.org/standards/content/iso/sae21434/)).
   ISO describes it as not legally mandatory in itself. In late September 2026 it was in systematic
   review, with no replacing edition listed
   ([ISO page, archived](https://web.archive.org/web/20260927121109/https://www.iso.org/standard/70918.html)).
-- **UN Regulations No. 155 and No. 156** (cybersecurity and cybersecurity management system; software
-  update and software update management system) were adopted by UNECE's World Forum for Harmonization
-  of Vehicle Regulations (WP.29) in June 2020 and entered into force on 22 January 2021
+- **UN Regulation No. 155** covers cybersecurity and cybersecurity management systems. **UN
+  Regulation No. 156** covers software updates and software update management systems. UNECE's World
+  Forum for Harmonization of Vehicle Regulations (WP.29) adopted both in June 2020. Both entered into
+  force on 22 January 2021
   ([Official Journal of the EU](http://publications.europa.eu/resource/celex/42021X0387)).
   - Under R155, an approval authority may grant cybersecurity type approval only to vehicle types
-    that meet the Regulation, and the manufacturer needs a Certificate of Compliance for a
+    that meet the Regulation. The manufacturer also needs a Certificate of Compliance for a
     cybersecurity management system (CSMS) that covers the vehicle type. The CSMS must cover
-    development, production and post-production, and its risk processes must take into account the
-    threats listed in the Regulation's Annex 5
+    development, production and post-production. Its risk processes must take into account the
+    threats listed in Annex 5, Part A, of the Regulation
     ([R155](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:42021X0387)).
   - R156 requires a Certificate of Compliance for a software update management system (SUMS). It
     includes processes to document software and hardware versions, to check whether an update

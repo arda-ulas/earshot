@@ -12,16 +12,18 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class AbortableTest {
     @Test
-    fun `a call that finishes normally is never aborted`() =
+    fun `a call that finishes normally is never aborted`() {
+        // Block body: JUnit Jupiter silently skips test methods that return a value.
         runBlocking {
             val aborts = AtomicInteger()
             runAbortable(Dispatchers.IO, abort = { aborts.incrementAndGet() }) { 42 } shouldBe 42
             aborts.get() shouldBe 0
         }
+    }
 
     @Test
     @Verifies("SR-11")
-    fun `cancelling aborts the blocking call, which then returns`() =
+    fun `cancelling aborts the blocking call, which then returns`() {
         runBlocking {
             val released = CountDownLatch(1)
             val finished = CountDownLatch(1)
@@ -36,4 +38,5 @@ class AbortableTest {
             result shouldBe null
             finished.await(0, TimeUnit.SECONDS) shouldBe true
         }
+    }
 }
