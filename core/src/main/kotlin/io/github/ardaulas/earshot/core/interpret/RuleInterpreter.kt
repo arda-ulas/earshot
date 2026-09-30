@@ -18,6 +18,15 @@ sealed interface RuleResult {
 
     /** No rule matched. The caller may try the language model, or treat it as out of domain. */
     data object NoMatch : RuleResult
+
+    /**
+     * The words touch the domain but must not become an action: negated, a question that is not a
+     * supported query, an unsupported target (seats, windows, ...), or more than one action. Refused
+     * without consulting the language model (audit #1).
+     */
+    data class Rejected(
+        val reason: String,
+    ) : RuleResult
 }
 
 /**
@@ -28,14 +37,65 @@ class RuleInterpreter {
     fun interpret(transcript: String): RuleResult {
         val t = TextNormalizer.normalize(transcript)
         if (t.isEmpty()) return RuleResult.NoMatch
-        return control(t)
-            ?: temperature(t)
-            ?: fan(t)
-            ?: defrost(t)
-            ?: ac(t)
-            ?: query(t)
-            ?: RuleResult.NoMatch
+        control(t)?.let { return it }
+        query(t)?.let { return it }
+        // Everything below would be a vehicle action: require one complete, positive, supported request.
+        val raw = transcript.trim()
+        val domain = DOMAIN_WORD.containsMatchIn(t)
+        if (domain && INVALID_NUMBER.containsMatchIn(t)) {
+            return when {
+                "fan" in t -> RuleResult.OutOfRange("fan speed", Bounds.FAN_LEVEL)
+                STEP_WORDS.containsMatchIn(t) -> RuleResult.OutOfRange("temperature change", Bounds.TEMP_DELTA)
+                else -> RuleResult.OutOfRange("temperature", Bounds.TEMP_C)
+            }
+        }
+        val actions = listOfNotNull(temperature(t), fan(t), defrost(t), ac(t))
+        if (actions.isEmpty()) {
+            return when {
+                !domain -> RuleResult.NoMatch
+                unsupportedTarget(t) -> RuleResult.Rejected("unsupported target")
+                NEGATION.containsMatchIn(t) -> RuleResult.Rejected("negated")
+                raw.endsWith("?") || QUESTION.containsMatchIn(t) -> RuleResult.Rejected("question")
+                CONJUNCTION.containsMatchIn(t) -> RuleResult.Rejected("more than one request")
+                else -> RuleResult.NoMatch
+            }
+        }
+        return when {
+            NEGATION.containsMatchIn(t) -> RuleResult.Rejected("negated")
+            raw.endsWith("?") || QUESTION.containsMatchIn(t) -> RuleResult.Rejected("question")
+            unsupportedTarget(t) -> RuleResult.Rejected("unsupported target")
+            UNSUPPORTED_UNIT.containsMatchIn(t) -> RuleResult.Rejected("unsupported unit")
+            actions.size > 1 -> RuleResult.Rejected("more than one action")
+            INVALID_NUMBER.containsMatchIn(t) -> invalidNumber(actions.single())
+            else -> actions.single()
+        }
     }
+
+    /** "window" is a supported target only for defrost ("defrost the rear window"). */
+    private fun unsupportedTarget(t: String): Boolean {
+        val words = UNSUPPORTED_TARGET.findAll(t).map { it.value }.toList()
+        return words.any { it !in setOf("window", "windows") || "defrost" !in t }
+    }
+
+    /** A signed or fractional number inside an action: answer with the valid range, never a guess. */
+    private fun invalidNumber(action: RuleResult): RuleResult =
+        when (action) {
+            is RuleResult.OutOfRange -> {
+                action
+            }
+
+            is RuleResult.Matched -> {
+                when (action.command) {
+                    is Command.SetFan -> RuleResult.OutOfRange("fan speed", Bounds.FAN_LEVEL)
+                    is Command.AdjustTemp -> RuleResult.OutOfRange("temperature change", Bounds.TEMP_DELTA)
+                    else -> RuleResult.OutOfRange("temperature", Bounds.TEMP_C)
+                }
+            }
+
+            else -> {
+                action
+            }
+        }
 
     private fun control(t: String): RuleResult? {
         val cmd =
@@ -143,7 +203,17 @@ class RuleInterpreter {
 
         val SET_TO = Regex("""\b(?:to|at)\s+(\d+)\b""")
         val DEGREES = Regex("""\b(\d+)\s+degrees\b""")
-        val QUESTION = Regex("""^(is|are|was|what|whats|how|did|does|do|why|when)\b""")
+        val QUESTION = Regex("""^(is|are|was|were|what|whats|how|did|does|do|why|when|can|could|would|will|should|has|have)\b""")
+        val NEGATION = Regex("""\b(dont|do not|not|never|no|nothing|without|stop|isnt|arent|wont|cant|shouldnt|neither|nor)\b""")
+        val UNSUPPORTED_TARGET =
+            Regex(
+                """\b(seat|seats|steering|wheel|mirror|mirrors|sunroof|roof|door|doors|lock|locks|light|lights|headlights|window|windows|massage|trunk|boot)\b""",
+            )
+        val DOMAIN_WORD = Regex("""\b(warmer|cooler|hotter|colder|heat|heated|heating|cool|cooling|warm|temperature|fan|defrost|ac)\b""")
+        val CONJUNCTION = Regex("""\b(and|but|then|also|plus)\b""")
+        val STEP_WORDS = Regex("""\b(up|down|by|warmer|cooler|raise|lower|increase|decrease)\b""")
+        val UNSUPPORTED_UNIT = Regex("""\b(fahrenheit|kelvin|percent)\b""")
+        val INVALID_NUMBER = Regex("""\b(minus|negative) \d+|\d+ point \d+|\bpoint \d+|\b(half|quarter)\b""")
         val STEP = Regex("""\b(up|down)\s+(?:by\s+)?(\d+)\s+degrees?\b""")
         val WARMER =
             listOf("warmer", "hotter", "turn up the heat", "raise the temperature", "increase the temperature", "warm it up")

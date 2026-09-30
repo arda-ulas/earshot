@@ -68,6 +68,13 @@ private fun TestScope.harness(
     return Harness(engine, speech, lm, vehicle, trace, stateHolder)
 }
 
+/** Handles one utterance and, as the app does, reports a confirmation question as delivered. */
+private suspend fun Harness.handleAndDeliver(): TurnResult {
+    val r = engine.handle(PCM, InputSource.CLIP)
+    r.confirmationId?.let { engine.confirmationDelivered(it) }
+    return r
+}
+
 class TurnEngineTest {
     // --- U1..U10 -----------------------------------------------------------------------------
 
@@ -77,7 +84,7 @@ class TurnEngineTest {
         runTest {
             val h = harness(DrivingState.PARKED)
             h.speech.queue("Set the temperature to 19.", 0.9f)
-            val result = h.engine.handle(PCM, InputSource.CLIP)
+            val result = h.handleAndDeliver()
             result.outcome shouldBe Outcome.ACTED
             result.spoken shouldBe Responses.temperatureNow(19)
             result.screen shouldBe ScreenContent.Text(result.spoken)
@@ -90,7 +97,7 @@ class TurnEngineTest {
         runTest {
             val h = harness(DrivingState.MOVING)
             h.speech.queue("Turn on the front defrost.", 0.9f)
-            val result = h.engine.handle(PCM, InputSource.CLIP)
+            val result = h.handleAndDeliver()
             result.outcome shouldBe Outcome.ACTED
             result.spoken shouldBe Responses.defrostNow(Window.FRONT, on = true)
             result.screen shouldBe null
@@ -103,7 +110,7 @@ class TurnEngineTest {
             val h = harness(DrivingState.MOVING)
             h.vehicle.signalsOverride = SignalSample(63.0, Gear.DRIVE, 0)
             h.speech.queue("How fast am I going?", 0.9f)
-            val result = h.engine.handle(PCM, InputSource.CLIP)
+            val result = h.handleAndDeliver()
             result.outcome shouldBe Outcome.ANSWERED
             result.spoken shouldBe Responses.speed(63.0)
             result.screen shouldBe null
@@ -115,7 +122,7 @@ class TurnEngineTest {
         runTest {
             val h = harness(DrivingState.MOVING)
             h.speech.queue("Show me my climate settings.", 0.9f)
-            val result = h.engine.handle(PCM, InputSource.CLIP)
+            val result = h.handleAndDeliver()
             result.outcome shouldBe Outcome.REFUSED
             result.spoken shouldBe Responses.screenRefusedWithSummary(Responses.shortSummary(21, 2))
             result.screen shouldBe null
@@ -127,7 +134,7 @@ class TurnEngineTest {
         runTest {
             val h = harness(DrivingState.PARKED)
             h.speech.queue("Show me my climate settings.", 0.9f)
-            val result = h.engine.handle(PCM, InputSource.CLIP)
+            val result = h.handleAndDeliver()
             result.outcome shouldBe Outcome.ANSWERED
             result.spoken shouldBe Responses.SHOWING_CLIMATE
             result.screen shouldBe ScreenContent.ClimatePanel(SimulatedVehicleGateway.DEFAULT_CLIMATE)
@@ -139,7 +146,7 @@ class TurnEngineTest {
         runTest {
             val h = harness(DrivingState.PARKED)
             h.speech.queue("Make it warmer.", 0.9f)
-            val result = h.engine.handle(PCM, InputSource.CLIP)
+            val result = h.handleAndDeliver()
             result.outcome shouldBe Outcome.ACTED
             result.spoken shouldBe Responses.temperatureNow(22)
         }
@@ -152,7 +159,7 @@ class TurnEngineTest {
             h.vehicle.write(ClimateProperty.CABIN_TEMPERATURE_C, 28)
             val writesBefore = h.vehicle.writeCount
             h.speech.queue("Make it warmer.", 0.9f)
-            val result = h.engine.handle(PCM, InputSource.CLIP)
+            val result = h.handleAndDeliver()
             result.outcome shouldBe Outcome.NO_CHANGE
             result.spoken shouldBe Responses.temperatureAtLimit(28)
             h.vehicle.writeCount shouldBe writesBefore
@@ -164,7 +171,7 @@ class TurnEngineTest {
         runTest {
             val h = harness(DrivingState.PARKED, useLm = false)
             h.speech.queue("Order me a pizza.", 0.9f)
-            val result = h.engine.handle(PCM, InputSource.CLIP)
+            val result = h.handleAndDeliver()
             result.outcome shouldBe Outcome.REFUSED
             result.spoken shouldBe Responses.OUT_OF_DOMAIN
             h.vehicle.writeCount shouldBe 0
@@ -176,12 +183,12 @@ class TurnEngineTest {
         runTest {
             val h = harness(DrivingState.PARKED)
             h.speech.queue("mumble mumble", 0.1f)
-            val first = h.engine.handle(PCM, InputSource.CLIP)
+            val first = h.handleAndDeliver()
             first.outcome shouldBe Outcome.REPROMPTED
             first.spoken shouldBe Responses.REPROMPT
 
             h.speech.queue("mumble mumble", 0.1f)
-            val second = h.engine.handle(PCM, InputSource.CLIP)
+            val second = h.handleAndDeliver()
             second.outcome shouldBe Outcome.STOPPED
             second.spoken shouldBe Responses.STOP_UNCLEAR
 
@@ -195,11 +202,11 @@ class TurnEngineTest {
         runTest {
             val h = harness(DrivingState.MOVING)
             h.speech.queue("Turn off the defrost.", 0.9f)
-            h.engine.handle(PCM, InputSource.CLIP)
+            h.handleAndDeliver()
             h.engine.isAwaitingConfirmation shouldBe true
 
             h.speech.queue("Never mind.", 0.9f)
-            val result = h.engine.handle(PCM, InputSource.CLIP)
+            val result = h.handleAndDeliver()
             result.outcome shouldBe Outcome.CANCELLED
             result.spoken shouldBe Responses.CANCELLED
             h.engine.isAwaitingConfirmation shouldBe false
@@ -212,13 +219,13 @@ class TurnEngineTest {
         runTest {
             val h = harness(DrivingState.MOVING)
             h.speech.queue("Turn off the defrost.", 0.9f)
-            val asked = h.engine.handle(PCM, InputSource.CLIP)
+            val asked = h.handleAndDeliver()
             asked.outcome shouldBe Outcome.CONFIRMATION_REQUESTED
             asked.spoken shouldBe Responses.confirmQuestion(Command.SetDefrost(Window.FRONT, on = false))
             h.vehicle.writeCount shouldBe 0
 
             h.speech.queue("yes", 0.9f)
-            val acted = h.engine.handle(PCM, InputSource.CLIP)
+            val acted = h.handleAndDeliver()
             acted.outcome shouldBe Outcome.ACTED
             acted.spoken shouldBe Responses.defrostNow(Window.FRONT, on = false)
             acted.screen shouldBe null
@@ -231,10 +238,10 @@ class TurnEngineTest {
         runTest {
             val h = harness(DrivingState.MOVING)
             h.speech.queue("Turn off the defrost.", 0.9f)
-            h.engine.handle(PCM, InputSource.CLIP)
+            h.handleAndDeliver()
 
             h.speech.queue("no", 0.9f)
-            val result = h.engine.handle(PCM, InputSource.CLIP)
+            val result = h.handleAndDeliver()
             result.outcome shouldBe Outcome.DECLINED
             result.spoken shouldBe Responses.DECLINED
             h.vehicle.writeCount shouldBe 0
@@ -246,12 +253,12 @@ class TurnEngineTest {
         runTest {
             val h = harness(DrivingState.MOVING)
             h.speech.queue("Turn off the defrost.", 0.9f)
-            h.engine.handle(PCM, InputSource.CLIP)
+            h.handleAndDeliver()
 
             testScheduler.advanceTimeBy(10_001)
 
             h.speech.queue("yes", 0.9f)
-            val result = h.engine.handle(PCM, InputSource.CLIP)
+            val result = h.handleAndDeliver()
             result.outcome shouldBe Outcome.EXPIRED
             result.spoken shouldBe Responses.CONFIRMATION_EXPIRED
             h.vehicle.writeCount shouldBe 0
@@ -264,12 +271,12 @@ class TurnEngineTest {
         runTest {
             val h = harness(DrivingState.MOVING)
             h.speech.queue("Turn off the defrost.", 0.9f)
-            h.engine.handle(PCM, InputSource.CLIP)
+            h.handleAndDeliver()
 
             // The driver finishes saying "yes" at 9 s; recognizing it takes 3 s more.
             testScheduler.advanceTimeBy(9_000)
             h.speech.queue("yes", 0.9f, delayMs = 3_000)
-            val result = h.engine.handle(PCM, InputSource.CLIP)
+            val result = h.handleAndDeliver()
             result.outcome shouldBe Outcome.ACTED
             h.vehicle.writeCount shouldBe 1
         }
@@ -280,15 +287,15 @@ class TurnEngineTest {
         runTest {
             val h = harness(DrivingState.MOVING)
             h.speech.queue("Turn off the defrost.", 0.9f)
-            h.engine.handle(PCM, InputSource.CLIP)
+            h.handleAndDeliver()
             h.engine.isAwaitingConfirmation shouldBe true
 
             h.speech.queue("How fast am I going?", 0.9f)
-            h.engine.handle(PCM, InputSource.CLIP)
+            h.handleAndDeliver()
             h.engine.isAwaitingConfirmation shouldBe false
 
             h.speech.queue("yes", 0.9f)
-            val result = h.engine.handle(PCM, InputSource.CLIP)
+            val result = h.handleAndDeliver()
             result.outcome shouldBe Outcome.REFUSED
             result.spoken shouldBe Responses.NOTHING_PENDING
             h.vehicle.writeCount shouldBe 0
@@ -301,13 +308,13 @@ class TurnEngineTest {
             val h = harness(DrivingState.PARKED)
             h.lm.queueReturns("""{"intent":"warmer"}""")
             h.speech.queue("I'm freezing", 0.9f)
-            val asked = h.engine.handle(PCM, InputSource.CLIP)
+            val asked = h.handleAndDeliver()
             asked.outcome shouldBe Outcome.CONFIRMATION_REQUESTED
             asked.spoken shouldBe Responses.confirmQuestion(Command.AdjustTemp(2))
             h.lm.callCount shouldBe 1
 
             h.speech.queue("yes", 0.9f)
-            val acted = h.engine.handle(PCM, InputSource.CLIP)
+            val acted = h.handleAndDeliver()
             acted.outcome shouldBe Outcome.ACTED
             acted.spoken shouldBe Responses.temperatureNow(23)
         }
@@ -321,7 +328,7 @@ class TurnEngineTest {
             val h = harness(DrivingState.PARKED)
             h.lm.queueReturns("not json")
             h.speech.queue("I'm freezing", 0.9f)
-            val result = h.engine.handle(PCM, InputSource.CLIP)
+            val result = h.handleAndDeliver()
             result.outcome shouldBe Outcome.REFUSED
             result.spoken shouldBe Responses.OUT_OF_DOMAIN
             h.vehicle.writeCount shouldBe 0
@@ -334,7 +341,7 @@ class TurnEngineTest {
             val h = harness(DrivingState.PARKED)
             h.lm.queueHangs()
             h.speech.queue("I'm freezing", 0.9f)
-            val result = h.engine.handle(PCM, InputSource.CLIP)
+            val result = h.handleAndDeliver()
             result.outcome shouldBe Outcome.REFUSED
             result.spoken shouldBe Responses.OUT_OF_DOMAIN
             h.vehicle.writeCount shouldBe 0
@@ -347,7 +354,7 @@ class TurnEngineTest {
             val h = harness(DrivingState.PARKED)
             h.lm.queueThrows()
             h.speech.queue("I'm freezing", 0.9f)
-            val result = h.engine.handle(PCM, InputSource.CLIP)
+            val result = h.handleAndDeliver()
             result.outcome shouldBe Outcome.REFUSED
             result.spoken shouldBe Responses.OUT_OF_DOMAIN
             h.vehicle.writeCount shouldBe 0
@@ -361,7 +368,7 @@ class TurnEngineTest {
         runTest {
             val h = harness(DrivingState.PARKED)
             h.speech.queue("Set the temperature to 19.", 0.9f, delayMs = 6_000)
-            val result = h.engine.handle(PCM, InputSource.CLIP)
+            val result = h.handleAndDeliver()
             result.outcome shouldBe Outcome.DISCARDED_STALE
             result.spoken shouldBe Responses.STALE
             h.vehicle.writeCount shouldBe 0
@@ -373,14 +380,14 @@ class TurnEngineTest {
         runTest {
             val h = harness(DrivingState.MOVING)
             h.speech.queue("Turn off the defrost.", 0.9f)
-            h.engine.handle(PCM, InputSource.CLIP)
+            h.handleAndDeliver()
 
             // Six seconds pass with the driver saying nothing - longer than the 5 s action budget,
             // but well inside the 10 s confirmation window.
             testScheduler.advanceTimeBy(6_000)
 
             h.speech.queue("yes", 0.9f)
-            val result = h.engine.handle(PCM, InputSource.CLIP)
+            val result = h.handleAndDeliver()
             result.outcome shouldBe Outcome.ACTED
             result.spoken shouldBe Responses.defrostNow(Window.FRONT, on = false)
         }
@@ -394,7 +401,7 @@ class TurnEngineTest {
             val h = harness(DrivingState.PARKED)
             h.vehicle.forceUnavailable = true
             h.speech.queue("Set the temperature to 19.", 0.9f)
-            val result = h.engine.handle(PCM, InputSource.CLIP)
+            val result = h.handleAndDeliver()
             result.outcome shouldBe Outcome.FAILED
             result.spoken shouldBe Responses.CONTROLS_UNAVAILABLE
         }
@@ -406,7 +413,7 @@ class TurnEngineTest {
             val h = harness(DrivingState.PARKED)
             h.vehicle.rejectWrites = true
             h.speech.queue("Set the temperature to 19.", 0.9f)
-            val result = h.engine.handle(PCM, InputSource.CLIP)
+            val result = h.handleAndDeliver()
             result.outcome shouldBe Outcome.FAILED
             result.spoken shouldBe Responses.writeFailed(Command.SetTemp(19))
             h.vehicle.writeCount shouldBe 1
@@ -419,7 +426,7 @@ class TurnEngineTest {
             val h = harness(DrivingState.PARKED, config = TurnConfig(writeTimeoutMs = 1_000))
             h.vehicle.hangWrites = true
             h.speech.queue("Set the temperature to 19.", 0.9f)
-            val result = h.engine.handle(PCM, InputSource.CLIP)
+            val result = h.handleAndDeliver()
             result.outcome shouldBe Outcome.FAILED
             result.spoken shouldBe Responses.writeFailed(Command.SetTemp(19))
             h.vehicle.writeCount shouldBe 1
@@ -432,7 +439,7 @@ class TurnEngineTest {
             val h = harness(DrivingState.PARKED)
             h.vehicle.readOverride[ClimateProperty.CABIN_TEMPERATURE_C] = 99
             h.speech.queue("Set the temperature to 19.", 0.9f)
-            val result = h.engine.handle(PCM, InputSource.CLIP)
+            val result = h.handleAndDeliver()
             result.outcome shouldBe Outcome.ACTED
             result.spoken shouldBe Responses.temperatureNow(99)
         }
@@ -475,7 +482,7 @@ class TurnEngineTest {
         runTest {
             val h = harness(DrivingState.PARKED)
             h.speech.queueThrow()
-            val result = h.engine.handle(PCM, InputSource.CLIP)
+            val result = h.handleAndDeliver()
             result.outcome shouldBe Outcome.REPROMPTED
             result.spoken shouldBe Responses.REPROMPT
             h.vehicle.writeCount shouldBe 0
@@ -487,7 +494,7 @@ class TurnEngineTest {
         runTest {
             val h = harness(DrivingState.PARKED)
             h.speech.queue("Set the temperature to 19.", 0.9f, delayMs = 60_000)
-            val result = h.engine.handle(PCM, InputSource.CLIP)
+            val result = h.handleAndDeliver()
             result.outcome shouldBe Outcome.REPROMPTED
             h.vehicle.writeCount shouldBe 0
             (
@@ -507,7 +514,7 @@ class TurnEngineTest {
             var completedNormally = false
             val job =
                 launch {
-                    h.engine.handle(PCM, InputSource.CLIP)
+                    h.handleAndDeliver()
                     completedNormally = true
                 }
             runCurrent()
@@ -527,7 +534,7 @@ class TurnEngineTest {
         runTest {
             val h = harness(DrivingState.PARKED)
             h.speech.queue("Set the temperature to 19.", 0.9f)
-            h.engine.handle(PCM, InputSource.CLIP)
+            h.handleAndDeliver()
             val acted = h.trace.traces.last()
             acted.inputSource shouldBe InputSource.CLIP
             acted.host shouldBe HOST
@@ -538,7 +545,7 @@ class TurnEngineTest {
 
             h.lm.queueReturns("""{"intent":"warmer"}""")
             h.speech.queue("I'm freezing", 0.9f)
-            h.engine.handle(PCM, InputSource.CLIP)
+            h.handleAndDeliver()
             val confirmed = h.trace.traces.last()
             val confirmedStages = confirmed.stages.map { it.stage }.toSet()
             (confirmedStages.containsAll(listOf("stt", "rules", "lm", "policy"))) shouldBe true

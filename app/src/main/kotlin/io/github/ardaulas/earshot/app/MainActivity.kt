@@ -45,6 +45,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStop() {
+        super.onStop()
+        viewModel.onLifecycleStop()
+    }
+
     override fun onResume() {
         super.onResume()
         viewModel.refreshClips()

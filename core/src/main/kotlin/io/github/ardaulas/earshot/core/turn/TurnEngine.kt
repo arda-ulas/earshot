@@ -58,6 +58,9 @@ enum class Outcome {
     STOPPED,
     EXPIRED,
     DISCARDED_STALE,
+
+    /** Allowed when decided, but the driving state became stricter before the write (audit #7). */
+    DISCARDED_STATE_CHANGED,
     FAILED,
 }
 
@@ -80,6 +83,14 @@ data class TurnResult(
     val outcome: Outcome,
     val awaitingConfirmation: Boolean,
     val trace: TurnTrace,
+    /**
+     * Set when this turn asked a confirmation question. The caller must report delivery with
+     * [TurnEngine.confirmationDelivered] (or failure with [TurnEngine.confirmationFailed]); until then
+     * no answer can confirm it.
+     */
+    val confirmationId: String? = null,
+    /** Non-null when the trace could not be stored; the turn's result is still valid. */
+    val traceError: String? = null,
 )
 
 /**
@@ -100,42 +111,99 @@ class TurnEngine(
     private val config: TurnConfig = TurnConfig(),
     private val newTurnId: () -> String = { UUID.randomUUID().toString() },
 ) {
+    /**
+     * A confirmation question. It is only answerable once [deliveredAtMs] is set (the question was
+     * actually spoken or shown), and only by an utterance that started after that (audit #4, #5).
+     */
     private data class Pending(
+        val id: String,
         val command: Command,
-        val expiresAtMs: Long,
+        val source: Source,
+        val deliveredAtMs: Long? = null,
     )
 
     private val mutex = Mutex()
+    private val lock = Any()
     private var pending: Pending? = null
     private var reprompts = 0
 
-    val isAwaitingConfirmation: Boolean get() = pending?.let { clock.millis() <= it.expiresAtMs } ?: false
+    val isAwaitingConfirmation: Boolean
+        get() =
+            synchronized(lock) {
+                pending?.deliveredAtMs?.let { clock.millis() <= it + config.confirmationTtlMs } ?: false
+            }
 
-    /** Handles one utterance. [utteranceEndMs] is when capture stopped, on [clock]'s timeline. */
+    /** The question for [confirmationId] has been delivered: its answering window starts now. */
+    fun confirmationDelivered(
+        confirmationId: String,
+        atMs: Long = clock.millis(),
+    ) = synchronized(lock) {
+        val p = pending
+        if (p != null && p.id == confirmationId && p.deliveredAtMs == null) pending = p.copy(deliveredAtMs = atMs)
+    }
+
+    /** The question for [confirmationId] could not be delivered: it can never be confirmed. */
+    fun confirmationFailed(confirmationId: String) =
+        synchronized(lock) {
+            if (pending?.id == confirmationId) pending = null
+        }
+
+    /** Takes the pending confirmation out; each turn decides whether one exists afterwards. */
+    private fun takePending(): Pending? =
+        synchronized(lock) {
+            val p = pending
+            pending = null
+            p
+        }
+
+    private fun setPending(p: Pending?) = synchronized(lock) { pending = p }
+
+    /**
+     * Handles one utterance. [utteranceEndMs] is when capture stopped and [utteranceStartMs] when it
+     * started, on [clock]'s timeline; an answer counts only if it started after its question was
+     * delivered.
+     */
     suspend fun handle(
         pcm16k: FloatArray,
         inputSource: InputSource,
         utteranceEndMs: Long = clock.millis(),
+        utteranceStartMs: Long? = null,
     ): TurnResult =
         mutex.withLock {
             val turn = TurnRecorder(newTurnId(), inputSource, clock.nanoTime())
             try {
                 // The trace is finalized here, after every stage (including "act") has been timed.
-                val draft = runTurn(turn, pcm16k, utteranceEndMs)
-                draft.copy(trace = turn.finish(draft.outcome.name, draft.spoken)).also { traceSink.write(it.trace) }
+                val draft = runTurn(turn, pcm16k, utteranceEndMs, utteranceStartMs)
+                val result = draft.copy(trace = turn.finish(draft.outcome.name, draft.spoken))
+                // A storage failure must not hide the result of an action that already happened (audit #16).
+                result.copy(traceError = writeTrace(result.trace))
             } catch (e: CancellationException) {
-                pending = null
+                setPending(null)
                 reprompts = 0
-                traceSink.write(turn.finish("CANCELLED_BY_USER", Responses.CANCELLED))
+                writeTrace(turn.finish("CANCELLED_BY_USER", Responses.CANCELLED))
                 throw e
             }
+        }
+
+    private fun writeTrace(trace: TurnTrace): String? =
+        try {
+            traceSink.write(trace)
+            null
+        } catch (
+            @Suppress("TooGenericExceptionCaught") e: Exception,
+        ) {
+            e.javaClass.simpleName
         }
 
     private suspend fun runTurn(
         turn: TurnRecorder,
         pcm16k: FloatArray,
         utteranceEndMs: Long,
+        utteranceStartMs: Long?,
     ): TurnResult {
+        // This turn owns any pending confirmation: it survives only a re-prompt; everything else ends
+        // it, including early returns (audit #3).
+        val prior = takePending()
         val transcript =
             turn.stage("stt") {
                 try {
@@ -164,6 +232,10 @@ class TurnEngine(
                     ruleResult.command
                 }
 
+                is RuleResult.Rejected -> {
+                    Command.OutOfDomain
+                }
+
                 is RuleResult.OutOfRange -> {
                     if (confident) {
                         reprompts = 0
@@ -188,9 +260,12 @@ class TurnEngine(
         turn.command = command
         turn.source = source
 
-        val now = clock.millis()
-        val currentPending = pending
-        val pendingValid = currentPending != null && utteranceEndMs <= currentPending.expiresAtMs
+        val currentPending = prior
+        val delivered = prior?.deliveredAtMs
+        val pendingValid =
+            delivered != null &&
+                (utteranceStartMs ?: utteranceEndMs) >= delivered &&
+                utteranceEndMs <= delivered + config.confirmationTtlMs
         val frontDefrostOn =
             if (command is Command.SetFan) readBool(ClimateProperty.FRONT_DEFROST) else null
         val verdict =
@@ -201,20 +276,18 @@ class TurnEngine(
             }
         turn.verdict = verdict
 
-        // Anything other than a re-prompt ends the re-prompt streak; anything other than a re-prompt or
-        // an answer abandons a pending confirmation.
+        // Anything other than a re-prompt ends the re-prompt streak.
         if (verdict != Verdict.Reprompt) reprompts = 0
-        if (verdict != Verdict.Reprompt && command !is Command.Answer) pending = null
 
         return when (verdict) {
             Verdict.Reprompt -> {
                 reprompts = 1
+                setPending(prior)
                 turn.result(verdict, Outcome.REPROMPTED, Responses.REPROMPT, null)
             }
 
             Verdict.Stop -> {
                 if (command == Command.Cancel) {
-                    pending = null
                     turn.result(verdict, Outcome.CANCELLED, Responses.CANCELLED, null)
                 } else {
                     turn.result(verdict, Outcome.STOPPED, Responses.STOP_UNCLEAR, null)
@@ -226,22 +299,25 @@ class TurnEngine(
             }
 
             Verdict.Confirm -> {
-                pending = Pending(command, now + config.confirmationTtlMs)
-                turn.result(verdict, Outcome.CONFIRMATION_REQUESTED, Responses.confirmQuestion(command), null)
+                val p = Pending(newTurnId(), command, source)
+                setPending(p)
+                turn
+                    .result(verdict, Outcome.CONFIRMATION_REQUESTED, Responses.confirmQuestion(command), null)
+                    .copy(confirmationId = p.id)
             }
 
             Verdict.Allow, Verdict.AllowVoiceOnly -> {
                 val voiceOnly = verdict == Verdict.AllowVoiceOnly
+                val deadlineMs = utteranceEndMs + config.actionBudgetMs
                 if (command is Command.Answer) {
-                    val confirmed = checkNotNull(currentPending).command
-                    pending = null
+                    val confirmed = checkNotNull(currentPending)
                     if (command.yes) {
-                        execute(turn, verdict, confirmed, voiceOnly, utteranceEndMs)
+                        execute(turn, Act(verdict, confirmed.command, confirmed.source, true, voiceOnly, deadlineMs))
                     } else {
                         turn.result(verdict, Outcome.DECLINED, Responses.DECLINED, null)
                     }
                 } else {
-                    execute(turn, verdict, command, voiceOnly, utteranceEndMs)
+                    execute(turn, Act(verdict, command, source, false, voiceOnly, deadlineMs))
                 }
             }
         }
@@ -258,7 +334,6 @@ class TurnEngine(
             }
 
             RefuseReason.NOTHING_PENDING -> {
-                pending = null
                 if (previousPending != null) {
                     turn.result(verdict, Outcome.EXPIRED, Responses.CONFIRMATION_EXPIRED, null)
                 } else {
@@ -274,26 +349,52 @@ class TurnEngine(
             }
         }
 
+    /** What was allowed, by whom, and until when it may still start. */
+    private data class Act(
+        val verdict: Verdict,
+        val command: Command,
+        val source: Source,
+        /** True when the command runs after a spoken yes. */
+        val confirmed: Boolean,
+        val voiceOnly: Boolean,
+        /** Absolute SG-5 deadline: utterance end + action budget (audit #8). */
+        val deadlineMs: Long,
+    )
+
     private suspend fun execute(
         turn: TurnRecorder,
-        verdict: Verdict,
-        command: Command,
-        voiceOnly: Boolean,
-        utteranceEndMs: Long,
+        a: Act,
     ): TurnResult {
-        if (clock.millis() - utteranceEndMs > config.actionBudgetMs) {
-            return turn.result(verdict, Outcome.DISCARDED_STALE, Responses.STALE, null)
+        if (clock.millis() > a.deadlineMs) {
+            return turn.result(a.verdict, Outcome.DISCARDED_STALE, Responses.STALE, null)
         }
-        return turn.stage("act") { act(turn, verdict, command, voiceOnly) }
+        return turn.stage("act") { act(turn, a) }
+    }
+
+    /**
+     * Re-runs the policy against the driving state now, just before an effect. The decision was
+     * taken earlier, and suspending work in between (reads, a slow gateway) can cross a parked-to-moving
+     * change (audit #7). A confirmed command may still need a confirmation; anything stricter than
+     * what was already granted stops it.
+     */
+    private suspend fun stillAllowed(a: Act): Boolean {
+        val now = drivingState()
+        val frontDefrostOn = if (a.command is Command.SetFan) readBool(ClimateProperty.FRONT_DEFROST) else null
+        val recheck = policy.decide(PolicyInput(a.command, a.source, now, 1f, 0, false, frontDefrostOn))
+        val ceiling = if (a.confirmed) Verdict.Confirm.rank else Verdict.AllowVoiceOnly.rank
+        return recheck.rank <= ceiling
     }
 
     @Suppress("CyclomaticComplexMethod")
     private suspend fun act(
         turn: TurnRecorder,
-        verdict: Verdict,
-        command: Command,
-        voiceOnly: Boolean,
+        a: Act,
     ): TurnResult {
+        val verdict = a.verdict
+        val command = a.command
+        // Screen output only if the car is still parked now, not just when the turn was decided.
+        val voiceOnly = a.voiceOnly || drivingState().effective != DrivingState.PARKED
+
         fun answered(
             spoken: String,
             outcome: Outcome = Outcome.ANSWERED,
@@ -301,7 +402,7 @@ class TurnEngine(
 
         return when (command) {
             is Command.SetTemp -> {
-                writeThenReadBack(turn, verdict, command, ClimateProperty.CABIN_TEMPERATURE_C, command.celsius, voiceOnly)
+                writeThenReadBack(turn, a, ClimateProperty.CABIN_TEMPERATURE_C, command.celsius, voiceOnly)
             }
 
             is Command.AdjustTemp -> {
@@ -310,12 +411,12 @@ class TurnEngine(
                 if (target == current) {
                     answered(Responses.temperatureAtLimit(current), Outcome.NO_CHANGE)
                 } else {
-                    writeThenReadBack(turn, verdict, command, ClimateProperty.CABIN_TEMPERATURE_C, target, voiceOnly)
+                    writeThenReadBack(turn, a, ClimateProperty.CABIN_TEMPERATURE_C, target, voiceOnly)
                 }
             }
 
             is Command.SetFan -> {
-                writeThenReadBack(turn, verdict, command, ClimateProperty.FAN_LEVEL, command.level, voiceOnly)
+                writeThenReadBack(turn, a, ClimateProperty.FAN_LEVEL, command.level, voiceOnly)
             }
 
             is Command.SetDefrost -> {
@@ -325,11 +426,11 @@ class TurnEngine(
                     } else {
                         ClimateProperty.REAR_DEFROST
                     }
-                writeThenReadBack(turn, verdict, command, property, if (command.on) 1 else 0, voiceOnly)
+                writeThenReadBack(turn, a, property, if (command.on) 1 else 0, voiceOnly)
             }
 
             is Command.SetAc -> {
-                writeThenReadBack(turn, verdict, command, ClimateProperty.AC, if (command.on) 1 else 0, voiceOnly)
+                writeThenReadBack(turn, a, ClimateProperty.AC, if (command.on) 1 else 0, voiceOnly)
             }
 
             Command.QuerySpeed -> {
@@ -350,7 +451,22 @@ class TurnEngine(
             }
 
             Command.ShowClimate -> {
+                if (voiceOnly) {
+                    val temp = readInt(ClimateProperty.CABIN_TEMPERATURE_C)
+                    val fan = readInt(ClimateProperty.FAN_LEVEL)
+                    val summary = if (temp != null && fan != null) Responses.shortSummary(temp, fan) else null
+                    return turn.result(verdict, Outcome.REFUSED, Responses.screenRefusedWithSummary(summary), null)
+                }
                 val values = ClimateProperty.entries.associateWith { readInt(it) ?: return unavailable(turn, verdict) }
+                // The reads may have taken time: show nothing if the car is no longer parked (audit #7).
+                if (drivingState().effective != DrivingState.PARKED) {
+                    val summary =
+                        Responses.shortSummary(
+                            values.getValue(ClimateProperty.CABIN_TEMPERATURE_C),
+                            values.getValue(ClimateProperty.FAN_LEVEL),
+                        )
+                    return turn.result(verdict, Outcome.REFUSED, Responses.screenRefusedWithSummary(summary), null)
+                }
                 turn.result(
                     verdict,
                     Outcome.ANSWERED,
@@ -373,13 +489,17 @@ class TurnEngine(
     /** Writes, then speaks the value read back from the vehicle, never the requested one. */
     private suspend fun writeThenReadBack(
         turn: TurnRecorder,
-        verdict: Verdict,
-        command: Command,
+        a: Act,
         property: ClimateProperty,
         value: Int,
         voiceOnly: Boolean,
     ): TurnResult {
+        val verdict = a.verdict
+        val command = a.command
         if (!vehicle.isAvailable) return unavailable(turn, verdict)
+        // Both checks sit immediately before the write, after every read that could have taken time.
+        if (!stillAllowed(a)) return turn.result(verdict, Outcome.DISCARDED_STATE_CHANGED, Responses.STATE_CHANGED, null)
+        if (clock.millis() > a.deadlineMs) return turn.result(verdict, Outcome.DISCARDED_STALE, Responses.STALE, null)
         val result = withTimeoutOrNull(config.writeTimeoutMs) { vehicle.write(property, value) } ?: WriteResult.TimedOut
         turn.writeResult = result
         val readBack = readInt(property)

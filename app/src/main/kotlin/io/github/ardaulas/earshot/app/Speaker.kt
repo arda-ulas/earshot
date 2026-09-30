@@ -27,15 +27,42 @@ class Speaker(
             _available.value = status == TextToSpeech.SUCCESS && configure()
         }
 
+    /** Name of the offline voice in use, for the developer panel; null when none. */
+    var voiceName: String? = null
+        private set
+
     private fun configure(): Boolean {
         val lang = tts.setLanguage(Locale.US)
         if (lang == TextToSpeech.LANG_MISSING_DATA || lang == TextToSpeech.LANG_NOT_SUPPORTED) return false
+        // Offline only (audit #11): pick an installed English voice that needs no network, or fail
+        // closed. Without INTERNET the app itself cannot send anything, but a network voice would run
+        // in the speech engine's process under its own permissions.
+        val offline =
+            runCatching { tts.voices }
+                .getOrNull()
+                .orEmpty()
+                .filter { v ->
+                    v.locale.language == "en" &&
+                        !v.isNetworkConnectionRequired &&
+                        TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED !in v.features.orEmpty() &&
+                        TextToSpeech.Engine.KEY_FEATURE_NETWORK_SYNTHESIS !in v.features.orEmpty()
+                }.sortedWith(compareBy({ it.locale != Locale.US }, { it.quality * -1 }))
+        val voice = offline.firstOrNull() ?: return false
+        if (tts.setVoice(voice) != TextToSpeech.SUCCESS || tts.voice?.isNetworkConnectionRequired != false) return false
+        voiceName = voice.name
         tts.setOnUtteranceProgressListener(
             object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String) = Unit
 
                 override fun onDone(utteranceId: String) {
                     waiting.remove(utteranceId)?.invoke(true)
+                }
+
+                override fun onStop(
+                    utteranceId: String,
+                    interrupted: Boolean,
+                ) {
+                    waiting.remove(utteranceId)?.invoke(false)
                 }
 
                 @Deprecated("Deprecated in Java")
@@ -69,6 +96,12 @@ class Speaker(
                 cont.resume(false)
             }
         }
+    }
+
+    /** Stops the current utterance; its speak() call returns false. */
+    fun stop() {
+        runCatching { tts.stop() }
+        waiting.keys.toList().forEach { id -> waiting.remove(id)?.invoke(false) }
     }
 
     fun shutdown() = tts.shutdown()

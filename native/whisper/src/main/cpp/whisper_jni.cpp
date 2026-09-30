@@ -29,6 +29,7 @@ extern "C" JNIEXPORT jlong JNICALL
 Java_io_github_ardaulas_earshot_whisper_WhisperNative_init(JNIEnv *env, jclass, jstring model_path) {
     LOGI("system info: %s", whisper_print_system_info());
     const char *path = env->GetStringUTFChars(model_path, nullptr);
+    if (path == nullptr) return 0;  // OutOfMemoryError pending
     whisper_context_params cparams = whisper_context_default_params();
     cparams.use_gpu = false;
     whisper_context *ctx = whisper_init_from_file_with_params(path, cparams);
@@ -48,6 +49,12 @@ Java_io_github_ardaulas_earshot_whisper_WhisperNative_free(JNIEnv *, jclass, jlo
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_io_github_ardaulas_earshot_whisper_WhisperNative_resetAbort(JNIEnv *, jclass, jlong ptr) {
+    auto *handle = reinterpret_cast<Handle *>(ptr);
+    if (handle != nullptr) handle->abort.store(false);
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_io_github_ardaulas_earshot_whisper_WhisperNative_abort(JNIEnv *, jclass, jlong ptr) {
     auto *handle = reinterpret_cast<Handle *>(ptr);
     if (handle != nullptr) handle->abort.store(true);
@@ -60,11 +67,17 @@ Java_io_github_ardaulas_earshot_whisper_WhisperNative_transcribe(
         JNIEnv *env, jclass, jlong ptr, jfloatArray audio, jint threads, jfloatArray out_confidence) {
     auto *handle = reinterpret_cast<Handle *>(ptr);
     if (handle == nullptr) return nullptr;
-    handle->abort.store(false);
+    // The abort flag is reset by the caller (resetAbort) before the call is published, never here.
 
     const jsize n = env->GetArrayLength(audio);
-    std::vector<float> pcm(static_cast<size_t>(n));
+    std::vector<float> pcm;
+    try {
+        pcm.resize(static_cast<size_t>(n));
+    } catch (const std::bad_alloc &) {
+        return nullptr;
+    }
     env->GetFloatArrayRegion(audio, 0, n, pcm.data());
+    if (env->ExceptionCheck()) return nullptr;
 
     whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
     params.n_threads = threads;

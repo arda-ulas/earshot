@@ -28,7 +28,9 @@ struct Handle {
 bool abort_requested(void *data) { return static_cast<Handle *>(data)->abort.load(); }
 
 std::string to_string(JNIEnv *env, jstring s) {
+    if (s == nullptr) return std::string();
     const char *c = env->GetStringUTFChars(s, nullptr);
+    if (c == nullptr) return std::string();  // OutOfMemoryError pending; the call then fails cleanly
     std::string out(c);
     env->ReleaseStringUTFChars(s, c);
     return out;
@@ -93,6 +95,12 @@ Java_io_github_ardaulas_earshot_llama_LlamaNative_free(JNIEnv *, jclass, jlong p
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_io_github_ardaulas_earshot_llama_LlamaNative_resetAbort(JNIEnv *, jclass, jlong ptr) {
+    auto *h = reinterpret_cast<Handle *>(ptr);
+    if (h != nullptr) h->abort.store(false);
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_io_github_ardaulas_earshot_llama_LlamaNative_abort(JNIEnv *, jclass, jlong ptr) {
     auto *h = reinterpret_cast<Handle *>(ptr);
     if (h != nullptr) h->abort.store(true);
@@ -136,7 +144,8 @@ Java_io_github_ardaulas_earshot_llama_LlamaNative_generate(
         JNIEnv *env, jclass, jlong ptr, jstring jprefix, jstring jsuffix, jstring jgrammar, jint max_tokens) {
     auto *h = reinterpret_cast<Handle *>(ptr);
     if (h == nullptr) return nullptr;
-    h->abort.store(false);
+    // The abort flag is reset by the caller (resetAbort) before the call is published, never here.
+    if (h->abort.load()) return nullptr;
     const std::string prefix = to_string(env, jprefix);
     const std::string suffix = to_string(env, jsuffix);
     const std::string grammar = to_string(env, jgrammar);

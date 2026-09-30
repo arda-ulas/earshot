@@ -20,6 +20,7 @@ object Responses {
     const val CONFIRMATION_EXPIRED = "That request timed out. Please ask again."
     const val DECLINED = "Okay, I won't."
     const val STALE = "That took too long, so I didn't do it."
+    const val STATE_CHANGED = "Driving changed, so I didn't do that. Please ask again."
     const val CONTROLS_UNAVAILABLE = "Vehicle controls are unavailable."
     const val SPEED_UNAVAILABLE = "Speed isn't available right now."
     const val GEAR_UNAVAILABLE = "Gear isn't available right now."

@@ -55,6 +55,10 @@ object TextNormalizer {
                 .replace(Regex("""\bdefroster\b"""), "defrost")
                 .replace(Regex("""\btemp\b"""), "temperature")
                 .replace(Regex("""(\d)\s*degrees?"""), "$1 degrees")
+                // Keep signs and decimals visible as words before punctuation is stripped, so "-21" and
+                // "28.5" cannot turn into the valid values 21 and 28 (audit #2).
+                .replace(Regex("""(^|[^\w])[-\u2212]\s*(\d)"""), "$1 minus $2")
+                .replace(Regex("""(\d)\s*[.,]\s*(\d)"""), "$1 point $2")
                 .replace('-', ' ')
                 .replace(Regex("""[^a-z0-9\s']"""), " ")
                 .replace("'", "")

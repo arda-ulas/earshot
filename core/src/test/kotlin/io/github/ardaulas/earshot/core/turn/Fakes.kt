@@ -120,6 +120,10 @@ class FaultInjectingGateway(
     val readOverride: MutableMap<ClimateProperty, Int> = mutableMapOf()
     var signalsOverride: SignalSample? = null
 
+    /** Virtual-time delay on every read (a slow gateway), and a hook that runs during each read. */
+    var readDelayMs = 0L
+    var onRead: (() -> Unit)? = null
+
     var writeCount = 0
         private set
     var readCount = 0
@@ -129,6 +133,8 @@ class FaultInjectingGateway(
 
     override suspend fun read(property: ClimateProperty): ReadResult {
         readCount++
+        onRead?.invoke()
+        if (readDelayMs > 0) delay(readDelayMs)
         if (forceUnavailable) return ReadResult.Unavailable
         readOverride[property]?.let { return ReadResult.Value(it) }
         return delegate.read(property)
@@ -170,7 +176,11 @@ class FaultInjectingGateway(
 class RecordingTraceSink : TraceSink {
     val traces = mutableListOf<TurnTrace>()
 
+    /** When true, every write throws, like a full disk. */
+    var fail = false
+
     override fun write(trace: TurnTrace) {
+        if (fail) throw java.io.IOException("disk full")
         traces += trace
     }
 }

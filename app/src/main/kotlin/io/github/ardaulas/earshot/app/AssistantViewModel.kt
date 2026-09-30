@@ -36,14 +36,15 @@ import io.github.ardaulas.earshot.core.vehicle.SimulatedVehicleGateway
 import io.github.ardaulas.earshot.core.vehicle.VehicleGateway
 import io.github.ardaulas.earshot.llama.LlamaLmEngine
 import io.github.ardaulas.earshot.whisper.WhisperSpeechEngine
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
@@ -113,7 +114,7 @@ class AssistantViewModel(
     private val vehicle: VehicleGateway = carGateway ?: simulated
     private val resolver = DrivingStateResolver()
     private val speaker = Speaker(app)
-    private val capture = AudioCapture()
+    private val capture = AudioCapture(clock)
     private val host =
         HostInfo(
             device = "${Build.MANUFACTURER} ${Build.MODEL}",
@@ -138,6 +139,18 @@ class AssistantViewModel(
         refreshClips()
     }
 
+    /** True while the current reply (screen content or a long answer) is only allowed when parked. */
+    @Volatile private var parkedOnlyOutput = false
+
+    /** The car is no longer parked: take parked-only content off the screen and stop a long reply (audit #7). */
+    private fun revokeParkedOutput() {
+        if (_state.value.screen != null) _state.update { it.copy(screen = null) }
+        if (parkedOnlyOutput) {
+            parkedOnlyOutput = false
+            speaker.stop()
+        }
+    }
+
     /** The platform's UX restrictions: null on a phone, where there is no restrictions service. */
     private fun uxRestricted(): Boolean? = platformCar?.requiresDistractionOptimization?.value
 
@@ -149,6 +162,7 @@ class AssistantViewModel(
                     resolver.update(signals)
                     resolver.current(clock.millis())
                 }.withUxRestrictions(uxRestricted())
+            if (driving != DrivingState.PARKED) revokeParkedOutput()
             val climate =
                 if (carGateway?.realClimate == true) {
                     ClimateProperty.entries.mapNotNull { p -> (vehicle.read(p) as? ReadResult.Value)?.let { p to it.value } }.toMap()
@@ -191,7 +205,8 @@ class AssistantViewModel(
                             .use { it.readText() },
                     )
                 val dir = app.getExternalFilesDir("models") ?: return@withContext AssistantStatus.Disabled("No external files directory.")
-                ModelGate.check(manifest, dir)
+                // Load only from a verified app-private snapshot (audit #15).
+                ModelGate.check(manifest, dir, File(app.filesDir, "models"))
             }
         when (status) {
             is AssistantStatus.Disabled -> {
@@ -277,55 +292,99 @@ class AssistantViewModel(
         _state.update { it.copy(phase = Phase.LISTENING, message = null) }
     }
 
-    /** Push-to-talk released: the utterance ends now. */
+    /** Push-to-talk released. The utterance ends when capture actually stopped (maybe at the limit). */
     fun onRelease() {
         if (_state.value.phase != Phase.LISTENING) return
-        val endMs = clock.millis()
-        runTurn(InputSource.MIC, endMs) { capture.stop() }
+        runTurn(InputSource.MIC) { capture.stop() }
+    }
+
+    /** The activity stopped: never keep the microphone, never act on half an utterance (audit #10). */
+    fun onLifecycleStop() {
+        if (_state.value.phase == Phase.LISTENING) {
+            capture.abort()
+            _state.update { it.copy(phase = Phase.IDLE) }
+        }
     }
 
     fun playClip(name: String) {
         if (_state.value.phase != Phase.IDLE || engine == null) return
         val file = ClipProvider.clips(getApplication()).firstOrNull { it.name == name } ?: return
         _state.update { it.copy(clipCaption = ClipProvider.caption(getApplication(), name) ?: name) }
-        runTurn(InputSource.CLIP, null) {
-            withContext(Dispatchers.IO) {
-                try {
-                    WavReader.read(file.readBytes())
-                } catch (e: IOException) {
-                    FloatArray(0)
+        runTurn(InputSource.CLIP) {
+            val pcm =
+                withContext(Dispatchers.IO) {
+                    try {
+                        // Bounded read: a clip is at most a few seconds of 16-bit audio.
+                        if (file.length() > MAX_CLIP_BYTES) FloatArray(0) else WavReader.read(file.readBytes())
+                    } catch (e: IOException) {
+                        FloatArray(0)
+                    }
                 }
-            }
+            val now = clock.millis()
+            Captured(pcm, now, now, overflowed = false)
         }
     }
 
     private fun runTurn(
         source: InputSource,
-        utteranceEndMs: Long?,
-        audio: suspend () -> FloatArray,
+        audio: suspend () -> Captured,
     ) {
         val turnEngine = engine ?: return
         _state.update { it.copy(phase = Phase.THINKING, message = null) }
         turnJob =
             viewModelScope.launch {
                 try {
-                    val pcm = audio()
-                    val result = turnEngine.handle(pcm, source, utteranceEndMs ?: clock.millis())
+                    val captured = audio()
+                    if (captured.overflowed) {
+                        // Held past the limit: reject the whole utterance rather than act on its start (audit #9).
+                        _state.update { it.copy(phase = Phase.SPEAKING, screen = null, lastSpoken = TOO_LONG) }
+                        speaker.speak(TOO_LONG)
+                        return@launch
+                    }
+                    val result = turnEngine.handle(captured.pcm, source, captured.endMs, captured.startMs)
                     _state.update {
                         it.copy(
                             phase = Phase.SPEAKING,
                             screen = result.screen,
                             lastSpoken = result.spoken,
-                            awaitingConfirmation = result.awaitingConfirmation,
+                            awaitingConfirmation = false,
                             lastTrace = result.trace,
                         )
                     }
+                    parkedOnlyOutput = result.screen != null || result.spoken.split(" ").size > Policy.MAX_WORDS_WHILE_MOVING
                     // Capture stays off until speech is done (SG-8).
-                    speaker.speak(result.spoken)
+                    val spoken = speaker.speak(result.spoken)
+                    result.confirmationId?.let { id -> deliverConfirmation(turnEngine, id, spoken, result.spoken) }
                 } finally {
                     _state.update { it.copy(phase = Phase.IDLE, awaitingConfirmation = engine?.isAwaitingConfirmation ?: false) }
                 }
             }
+    }
+
+    /**
+     * A confirmation question counts only once delivered (audit #4): spoken, or, with no speech engine,
+     * shown on screen while parked. Otherwise the proposal is dropped and can never be confirmed.
+     */
+    private fun deliverConfirmation(
+        turnEngine: TurnEngine,
+        id: String,
+        spoken: Boolean,
+        question: String,
+    ) {
+        when {
+            spoken -> {
+                turnEngine.confirmationDelivered(id)
+            }
+
+            drivingStateNow() == DrivingState.PARKED -> {
+                _state.update { it.copy(screen = ScreenContent.Text(question)) }
+                turnEngine.confirmationDelivered(id)
+            }
+
+            else -> {
+                turnEngine.confirmationFailed(id)
+            }
+        }
     }
 
     fun selectScenario(name: String) {
@@ -340,15 +399,20 @@ class AssistantViewModel(
 
     override fun onCleared() {
         speaker.shutdown()
-        // The scope is already cancelled; wait for aborted native calls (a turn, the language-model
-        // warm-up) to return before freeing the engines.
-        runBlocking {
-            turnJob?.join()
-            warmup?.join()
+        capture.abort()
+        // Never block the main thread here (audit #13): the engines' close() is safe while a call is
+        // running (it aborts it and the call frees on its way out), and cleanup runs off Main.
+        val jobs = listOfNotNull(turnJob, warmup)
+        val s = speech
+        val l = llm
+        val car = platformCar
+        CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+            jobs.forEach { it.cancel() }
+            s?.close()
+            l?.close()
+            jobs.forEach { it.join() }
+            car?.disconnect()
         }
-        speech?.close()
-        llm?.close()
-        platformCar?.disconnect()
     }
 
     private fun isEmulator(): Boolean =
@@ -361,6 +425,8 @@ class AssistantViewModel(
     private companion object {
         const val TICK_MS = 200L
         const val TAG = "earshot"
+        const val MAX_CLIP_BYTES = 2_000_000L
+        const val TOO_LONG = "That was too long. Please say it again."
         const val PERMISSION_CONTROL_CAR_CLIMATE = "android.car.permission.CONTROL_CAR_CLIMATE"
     }
 }

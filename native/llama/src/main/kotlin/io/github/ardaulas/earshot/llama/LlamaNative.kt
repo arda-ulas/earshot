@@ -17,6 +17,8 @@ internal object LlamaNative {
 
     @JvmStatic external fun abort(handle: Long)
 
+    @JvmStatic external fun resetAbort(handle: Long)
+
     @JvmStatic external fun formatChat(
         handle: Long,
         roles: Array<String>,

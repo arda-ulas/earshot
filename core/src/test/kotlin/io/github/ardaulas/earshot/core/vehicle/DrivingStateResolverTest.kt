@@ -49,19 +49,19 @@ class DrivingStateResolverTest {
     @Test
     fun `neutral at zero for more than the parked grace period is parked, less is moving`() {
         val resolver = DrivingStateResolver(parkedAfterMs = 2_000)
-        resolver.update(SignalSample(0.0, Gear.NEUTRAL, atMs = 0))
-        resolver.update(SignalSample(0.0, Gear.NEUTRAL, atMs = 1_000))
+        for (t in 0L..1_000L step 500) resolver.update(SignalSample(0.0, Gear.NEUTRAL, atMs = t))
         resolver.current(1_000) shouldBe DrivingState.MOVING
 
-        resolver.update(SignalSample(0.0, Gear.NEUTRAL, atMs = 2_500))
+        for (t in 1_500L..2_500L step 500) resolver.update(SignalSample(0.0, Gear.NEUTRAL, atMs = t))
         resolver.current(2_500) shouldBe DrivingState.PARKED
     }
 
     @Test
-    fun `NaN speed is moving, even in park`() {
+    fun `NaN speed is unknown (handled as moving), even in park`() {
         val resolver = DrivingStateResolver()
         resolver.update(SignalSample(Double.NaN, Gear.PARK, atMs = 0))
-        resolver.current(0) shouldBe DrivingState.MOVING
+        resolver.current(0) shouldBe DrivingState.UNKNOWN
+        resolver.current(0).effective shouldBe DrivingState.MOVING
     }
 
     @Test

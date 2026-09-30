@@ -22,6 +22,10 @@ class LlamaLmEngine private constructor(
 ) : LmEngine,
     Closeable {
     private val mutex = Mutex()
+    private val lock = Any()
+    private var closed = false
+    private var active = false
+    private var freed = false
 
     override suspend fun complete(
         system: String,
@@ -39,24 +43,62 @@ class LlamaLmEngine private constructor(
         }
         // One native context: calls (including a warm-up) must not overlap.
         return mutex.withLock {
-            runAbortable(dispatcher, abort = { LlamaNative.abort(handle) }) {
-                val prefix =
-                    LlamaNative.formatChat(handle, prefixRoles.toTypedArray(), prefixContents.toTypedArray(), false)
-                        ?: throw IOException("chat template failed")
-                // assistantPrefix (e.g. Qwen3's empty think block) goes right after the assistant marker.
-                val full =
-                    (
-                        LlamaNative.formatChat(handle, (prefixRoles + "user").toTypedArray(), (prefixContents + user).toTypedArray(), true)
-                            ?: throw IOException("chat template failed")
-                    ) + assistantPrefix
-                // The cached prefix is only reusable when the full prompt really starts with it.
-                val (cached, rest) = if (full.startsWith(prefix)) prefix to full.removePrefix(prefix) else "" to full
-                LlamaNative.generate(handle, cached, rest, grammar, maxTokens) ?: throw IOException("generation failed or aborted")
+            synchronized(lock) {
+                if (closed) throw IOException("closed")
+                active = true
+            }
+            try {
+                generate(prefixRoles, prefixContents, user, grammar, maxTokens, assistantPrefix)
+            } finally {
+                synchronized(lock) {
+                    active = false
+                    if (closed) freeLocked()
+                }
             }
         }
     }
 
-    override fun close() = LlamaNative.free(handle)
+    private suspend fun generate(
+        prefixRoles: List<String>,
+        prefixContents: List<String>,
+        user: String,
+        grammar: String,
+        maxTokens: Int,
+        assistantPrefix: String,
+    ): String =
+        runAbortable(
+            dispatcher,
+            reset = { LlamaNative.resetAbort(handle) },
+            abort = { LlamaNative.abort(handle) },
+        ) {
+            val prefix =
+                LlamaNative.formatChat(handle, prefixRoles.toTypedArray(), prefixContents.toTypedArray(), false)
+                    ?: throw IOException("chat template failed")
+            // assistantPrefix (e.g. Qwen3's empty think block) goes right after the assistant marker.
+            val full =
+                (
+                    LlamaNative.formatChat(handle, (prefixRoles + "user").toTypedArray(), (prefixContents + user).toTypedArray(), true)
+                        ?: throw IOException("chat template failed")
+                ) + assistantPrefix
+            // The cached prefix is only reusable when the full prompt really starts with it.
+            val (cached, rest) = if (full.startsWith(prefix)) prefix to full.removePrefix(prefix) else "" to full
+            LlamaNative.generate(handle, cached, rest, grammar, maxTokens) ?: throw IOException("generation failed or aborted")
+        }
+
+    /** Idempotent; never frees under a running call (it aborts it; the call frees on its way out). */
+    override fun close() =
+        synchronized(lock) {
+            if (closed) return
+            closed = true
+            if (active) LlamaNative.abort(handle) else freeLocked()
+        }
+
+    private fun freeLocked() {
+        if (!freed) {
+            freed = true
+            LlamaNative.free(handle)
+        }
+    }
 
     companion object {
         /** Loads the model; null if llama.cpp could not read it. Blocking: call off the main thread. */

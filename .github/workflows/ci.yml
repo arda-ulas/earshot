@@ -34,6 +34,9 @@ jobs:
       - name: Requirement traceability
         run: python3 scripts/traceability.py --check
 
+      - name: Manifest checker fixtures (SR-20)
+        run: python3 scripts/test_check_manifest.py
+
       - uses: actions/upload-artifact@v7
         if: always()
         with:
