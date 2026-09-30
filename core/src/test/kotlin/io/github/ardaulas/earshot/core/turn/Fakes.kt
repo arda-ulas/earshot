@@ -124,6 +124,9 @@ class FaultInjectingGateway(
     var readDelayMs = 0L
     var onRead: (() -> Unit)? = null
 
+    /** Runs when a write reaches the gateway, before the delegate's own checks (a queued write). */
+    var onWrite: (() -> Unit)? = null
+
     var writeCount = 0
         private set
     var readCount = 0
@@ -144,6 +147,7 @@ class FaultInjectingGateway(
         property: ClimateProperty,
         value: Int,
         notAfterMs: Long,
+        guard: () -> Boolean,
     ): WriteResult {
         writeCount++
         return when {
@@ -161,7 +165,8 @@ class FaultInjectingGateway(
             }
 
             else -> {
-                delegate.write(property, value, notAfterMs)
+                onWrite?.invoke()
+                delegate.write(property, value, notAfterMs, guard)
             }
         }
     }

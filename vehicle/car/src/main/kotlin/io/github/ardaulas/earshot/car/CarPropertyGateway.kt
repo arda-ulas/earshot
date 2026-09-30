@@ -56,12 +56,17 @@ class CarPropertyGateway(
         cached =
             withContext(io) {
                 if (!car.connected) return@withContext null
+                // The sample is stamped with the time before the reads, so a slow read ages it rather
+                // than making it look fresh (re-audit 3, N1).
+                val readStartMs = clock.millis()
                 val timed = car.readFloatTimed(CarIds.PERF_VEHICLE_SPEED, CarIds.AREA_GLOBAL)
-                val fresh = timed?.takeIf { car.elapsedRealtimeNanos() - it.second <= speedFreshNs }?.first
                 val gear =
                     car.readInt(CarIds.GEAR_SELECTION, CarIds.AREA_GLOBAL)
                         ?: car.readInt(CarIds.CURRENT_GEAR, CarIds.AREA_GLOBAL)
-                CarSignalMapper.sample(fresh, gear, clock.millis())
+                // Fresh means neither older than the limit nor from the future, checked after both reads.
+                val age = timed?.let { car.elapsedRealtimeNanos() - it.second }
+                val fresh = timed?.takeIf { age != null && age in 0..speedFreshNs }?.first
+                CarSignalMapper.sample(fresh, gear, readStartMs)
             }
     }
 
@@ -101,8 +106,9 @@ class CarPropertyGateway(
         property: ClimateProperty,
         value: Int,
         notAfterMs: Long,
+        guard: () -> Boolean,
     ): WriteResult {
-        if (!realClimate) return simulatedClimate.write(property, value, notAfterMs)
+        if (!realClimate) return simulatedClimate.write(property, value, notAfterMs, guard)
         if (value !in SimulatedVehicleGateway.validRange(property)) return WriteResult.Rejected
         return offload {
             if (!car.connected) return@offload WriteResult.Unavailable
@@ -117,6 +123,9 @@ class CarPropertyGateway(
             if (areas.isEmpty()) return@offload WriteResult.Rejected
             // Last check before the first effect (audit re-check #8). Once started, all areas are written.
             if (clock.millis() > notAfterMs) return@offload WriteResult.TimedOut
+            // The turn may have been cancelled, or the car may have started moving, while this call
+            // waited for the worker (re-audit 3, N12).
+            if (!guard()) return@offload WriteResult.Aborted
             var ok = true
             for (area in areas) {
                 ok =

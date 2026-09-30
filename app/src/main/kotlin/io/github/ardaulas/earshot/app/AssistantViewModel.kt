@@ -514,6 +514,7 @@ private object UnavailableVehicleGateway : VehicleGateway {
         property: ClimateProperty,
         value: Int,
         notAfterMs: Long,
+        guard: () -> Boolean,
     ) = io.github.ardaulas.earshot.core.vehicle.WriteResult.Unavailable
 
     override fun latestSignals(): io.github.ardaulas.earshot.core.vehicle.SignalSample? = null

@@ -26,6 +26,8 @@ import io.github.ardaulas.earshot.core.vehicle.ReadResult
 import io.github.ardaulas.earshot.core.vehicle.VehicleGateway
 import io.github.ardaulas.earshot.core.vehicle.WriteResult
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -380,15 +382,15 @@ class TurnEngine(
      * Re-runs the policy against the driving state now, just before an effect. The decision was
      * taken earlier, and suspending work in between (reads, a slow gateway) can cross a parked-to-moving
      * change (audit #7). A confirmed command may still need a confirmation; anything stricter than
-     * what was already granted stops it.
+     * what was already granted stops it. Returns the driving state the write was allowed in, or null.
      */
-    private suspend fun stillAllowed(a: Act): Boolean {
+    private suspend fun stillAllowed(a: Act): DrivingState? {
         val frontDefrostOn = if (a.command is Command.SetFan) readBool(ClimateProperty.FRONT_DEFROST) else null
         // Sampled after the last read, so nothing suspends between this and the write (audit re-check #7).
         val now = drivingState()
         val recheck = policy.decide(PolicyInput(a.command, a.source, now, 1f, 0, false, frontDefrostOn))
         val ceiling = if (a.confirmed) Verdict.Confirm.rank else Verdict.AllowVoiceOnly.rank
-        return recheck.rank <= ceiling
+        return if (recheck.rank <= ceiling) now else null
     }
 
     @Suppress("CyclomaticComplexMethod")
@@ -507,9 +509,15 @@ class TurnEngine(
         val command = a.command
         if (!vehicle.isAvailable) return unavailable(turn, verdict)
         // Both checks sit immediately before the write, after every read that could have taken time.
-        if (!stillAllowed(a)) return turn.result(verdict, Outcome.DISCARDED_STATE_CHANGED, Responses.STATE_CHANGED, null)
+        val allowedIn =
+            stillAllowed(a) ?: return turn.result(verdict, Outcome.DISCARDED_STATE_CHANGED, Responses.STATE_CHANGED, null)
         if (clock.millis() > a.deadlineMs) return turn.result(verdict, Outcome.DISCARDED_STALE, Responses.STALE, null)
-        val result = withTimeoutOrNull(config.writeTimeoutMs) { vehicle.write(property, value, a.deadlineMs) }
+        // Checked again by the gateway right before the first effect, wherever that runs: a write queued
+        // behind a slow car call must not start after the turn was cancelled or the state changed
+        // (re-audit 3, N12 and #7).
+        val job = currentCoroutineContext()[Job]
+        val guard = { job?.isActive != false && drivingState() == allowedIn }
+        val result = withTimeoutOrNull(config.writeTimeoutMs) { vehicle.write(property, value, a.deadlineMs, guard) }
         if (result == null) {
             // The wait stopped, but the write may still complete: never claim it failed (pre-review F7).
             turn.writeResult = WriteResult.TimedOut
@@ -551,6 +559,10 @@ class TurnEngine(
 
             WriteResult.Unavailable -> {
                 unavailable(turn, verdict)
+            }
+
+            WriteResult.Aborted -> {
+                turn.result(verdict, Outcome.DISCARDED_STATE_CHANGED, Responses.STATE_CHANGED, null)
             }
         }
     }

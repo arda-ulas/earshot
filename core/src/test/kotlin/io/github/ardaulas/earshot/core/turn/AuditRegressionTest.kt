@@ -497,4 +497,41 @@ class AuditRegressionTest {
             r.lm.callCount shouldBe 0
             r.vehicle.writeCount shouldBe 0
         }
+
+    @Test
+    @Verifies("SR-8")
+    fun `re-audit 3 N12 - a write that reaches the vehicle after the car started moving does nothing`() =
+        runTest {
+            val r = rig(DrivingState.PARKED)
+            r.vehicle.write(ClimateProperty.FRONT_DEFROST, 1)
+            // The policy and the re-check see PARKED; by the time the queued write runs, the car moves.
+            r.vehicle.onWrite = { r.state = DrivingState.MOVING }
+            r.say("turn off the defrost").outcome shouldBe Outcome.DISCARDED_STATE_CHANGED
+            r.vehicle.onWrite = null
+            (r.vehicle.read(ClimateProperty.FRONT_DEFROST) as ReadResult.Value).value shouldBe 1
+        }
+
+    @Test
+    @Verifies("SR-1", "SR-3")
+    fun `re-audit 3 1 and 2 - two zones, an unsupported zone, a misplaced unit or a hidden sign never act`() {
+        val rules = RuleInterpreter()
+        for (text in listOf(
+            "Turn off the front defrost; turn off the rear defrost",
+            "Set the rear temperature to 21",
+            "turn on the front ac",
+            "Fan to 3 celsius",
+            "set the fan to 2 degrees",
+        )) {
+            rules.interpret(text).shouldBeInstanceOf<RuleResult.Rejected>()
+        }
+        for (text in listOf("Set temperature to .21", "set temperature to -twenty one")) {
+            rules.interpret(text) shouldBe RuleResult.OutOfRange("temperature", Bounds.TEMP_C)
+        }
+        // Still fine: one window, and a temperature with its unit.
+        rules.interpret("turn off the rear defrost") shouldBe
+            RuleResult.Matched(Command.SetDefrost(io.github.ardaulas.earshot.core.command.Window.REAR, false))
+        rules.interpret("defrost the rear windshield") shouldBe
+            RuleResult.Matched(Command.SetDefrost(io.github.ardaulas.earshot.core.command.Window.REAR, true))
+        rules.interpret("set the temperature to 21 degrees celsius") shouldBe RuleResult.Matched(Command.SetTemp(21))
+    }
 }

@@ -38,6 +38,9 @@ sealed interface WriteResult {
     data object TimedOut : WriteResult
 
     data object Unavailable : WriteResult
+
+    /** The guard said no immediately before the first effect (turn cancelled, driving state changed). */
+    data object Aborted : WriteResult
 }
 
 /**
@@ -53,12 +56,15 @@ interface VehicleGateway {
     /**
      * Writes one property. [notAfterMs] (monotonic ms) is the latest time the write may start; an
      * implementation that has preparation work of its own must check it again immediately before the
-     * effect and return [WriteResult.TimedOut] if it has passed.
+     * effect and return [WriteResult.TimedOut] if it has passed. [guard] is evaluated at that same
+     * point, on whatever thread performs the effect; when it returns false nothing is written and the
+     * result is [WriteResult.Aborted]. It must not block.
      */
     suspend fun write(
         property: ClimateProperty,
         value: Int,
         notAfterMs: Long = Long.MAX_VALUE,
+        guard: () -> Boolean = { true },
     ): WriteResult
 
     /** The latest driving-signal reading, or null if none has arrived. */

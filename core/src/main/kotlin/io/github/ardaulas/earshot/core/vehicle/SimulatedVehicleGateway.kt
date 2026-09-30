@@ -44,10 +44,12 @@ class SimulatedVehicleGateway(
         property: ClimateProperty,
         value: Int,
         notAfterMs: Long,
+        guard: () -> Boolean,
     ): WriteResult {
         if (!connected) return WriteResult.Unavailable
         if (clock.millis() > notAfterMs) return WriteResult.TimedOut
         if (value !in validRange(property)) return WriteResult.Rejected
+        if (!guard()) return WriteResult.Aborted
         climate[property] = value
         return WriteResult.Ok
     }

@@ -74,35 +74,81 @@ class RuleInterpreter {
             }
         }
         return when {
-            NEGATION.containsMatchIn(t) -> RuleResult.Rejected("negated")
+            NEGATION.containsMatchIn(t) -> {
+                RuleResult.Rejected("negated")
+            }
 
-            raw.endsWith("?") || QUESTION.containsMatchIn(t) -> RuleResult.Rejected("question")
+            raw.endsWith("?") || QUESTION.containsMatchIn(t) -> {
+                RuleResult.Rejected("question")
+            }
 
-            unsupportedTarget(t) -> RuleResult.Rejected("unsupported target")
+            unsupportedTarget(t) -> {
+                RuleResult.Rejected("unsupported target")
+            }
 
-            UNSUPPORTED_UNIT.containsMatchIn(t) -> RuleResult.Rejected("unsupported unit")
+            UNSUPPORTED_UNIT.containsMatchIn(t) -> {
+                RuleResult.Rejected("unsupported unit")
+            }
 
-            actions.size > 1 || CONJUNCTION.containsMatchIn(t) -> RuleResult.Rejected("more than one action")
+            actions.size > 1 || CONJUNCTION.containsMatchIn(t) -> {
+                RuleResult.Rejected("more than one action")
+            }
 
             // One target, one direction, one number: a second request must never vanish silently, and
             // a number must never be truncated to a valid one (pre-review F1, F2, F4).
-            targets(t) > 1 -> RuleResult.Rejected("more than one action")
+            targets(t) > 1 -> {
+                RuleResult.Rejected("more than one action")
+            }
 
-            ON.containsMatchIn(t) && OFF.containsMatchIn(t) -> RuleResult.Rejected("conflicting")
+            ON.containsMatchIn(t) && OFF.containsMatchIn(t) -> {
+                RuleResult.Rejected("conflicting")
+            }
 
-            WARMER_WORD.containsMatchIn(t) && COOLER_WORD.containsMatchIn(t) -> RuleResult.Rejected("conflicting")
+            // One zone: front and rear together are two requests; a zone word on anything but the
+            // defrost asks for a zone Earshot does not have ("set the rear temperature") (re-audit 3, #1).
+            FRONT.containsMatchIn(t) && REAR.containsMatchIn(t) -> {
+                RuleResult.Rejected("more than one action")
+            }
 
-            NUMBER.findAll(t).count() > 1 -> RuleResult.Rejected("more than one number")
+            (FRONT.containsMatchIn(t) || REAR.containsMatchIn(t)) && !DEFROST_TARGET.containsMatchIn(t) -> {
+                RuleResult.Rejected("unsupported zone")
+            }
+
+            // A temperature unit belongs to a temperature only ("fan to 3 celsius").
+            TEMP_UNIT.containsMatchIn(t) && !isTemperature(actions.single()) -> {
+                RuleResult.Rejected("unit does not fit")
+            }
+
+            WARMER_WORD.containsMatchIn(t) && COOLER_WORD.containsMatchIn(t) -> {
+                RuleResult.Rejected("conflicting")
+            }
+
+            NUMBER.findAll(t).count() > 1 -> {
+                RuleResult.Rejected("more than one number")
+            }
 
             // Deny by default: an action utterance may contain only command vocabulary, so "the pizza
             // should be warmer" cannot change the cabin (audit re-check #1).
-            t.split(" ").any { it !in ACTION_VOCABULARY && !it.all(Char::isDigit) } -> RuleResult.Rejected("unrecognised words")
+            t.split(" ").any { it !in ACTION_VOCABULARY && !it.all(Char::isDigit) } -> {
+                RuleResult.Rejected("unrecognised words")
+            }
 
-            INVALID_NUMBER.containsMatchIn(t) -> invalidNumber(actions.single())
+            INVALID_NUMBER.containsMatchIn(t) -> {
+                invalidNumber(actions.single())
+            }
 
-            else -> actions.single()
+            else -> {
+                actions.single()
+            }
         }
     }
+
+    private fun isTemperature(r: RuleResult): Boolean =
+        when (r) {
+            is RuleResult.Matched -> r.command is Command.SetTemp || r.command is Command.AdjustTemp
+            is RuleResult.OutOfRange -> r.what.startsWith("temperature")
+            else -> false
+        }
 
     /** How many different things the utterance names: temperature, fan, defrost, AC. */
     private fun targets(t: String): Int = listOf(TEMP_TARGET, FAN_TARGET, DEFROST_TARGET, AC).count { it.containsMatchIn(t) }
@@ -266,6 +312,9 @@ class RuleInterpreter {
         val COOLER_WORD = Regex("""\b(cooler|colder|cool|down|lower|decrease)\b""")
         val TEMP_TARGET = Regex("""\b(temperature|thermostat|heat|heating|heater|degrees?|warmer|hotter|cooler|colder|warm)\b""")
         val FAN_TARGET = Regex("""\bfan\b""")
+        val FRONT = Regex("""\bfront\b|(?<!rear |back )\bwindshield\b""")
+        val REAR = Regex("""\b(rear|back)\b""")
+        val TEMP_UNIT = Regex("""\b(degrees?|celsius)\b""")
         val DEFROST_TARGET = Regex("""\bdefrost\b""")
 
         /** Every word an action utterance may contain; anything else rejects the action. */

@@ -258,9 +258,10 @@ class Pipeline(
             property: ClimateProperty,
             value: Int,
             notAfterMs: Long,
+            guard: () -> Boolean,
         ): WriteResult {
             writes++
-            return sim.write(property, value, notAfterMs)
+            return sim.write(property, value, notAfterMs, guard)
         }
 
         override fun latestSignals(): SignalSample? = sim.latestSignals()

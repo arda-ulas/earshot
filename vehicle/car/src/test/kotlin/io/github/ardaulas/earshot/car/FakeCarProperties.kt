@@ -28,10 +28,16 @@ class FakeCarProperties : CarProperties {
 
     override fun elapsedRealtimeNanos() = nowNanos
 
+    /** Runs on every int read (for example to let time pass during a slow read). */
+    var onReadInt: (() -> Unit)? = null
+
     override fun readInt(
         propertyId: Int,
         areaId: Int,
-    ) = ints[propertyId to areaId]
+    ): Int? {
+        onReadInt?.invoke()
+        return ints[propertyId to areaId]
+    }
 
     override fun readBoolean(
         propertyId: Int,

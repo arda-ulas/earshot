@@ -72,6 +72,10 @@ object TextNormalizer {
                 .replace(Regex("""(^|[^\d\s])\s*-\s*(\d)"""), "$1 minus $2")
                 .replace(Regex("""(^|\s)-\s*(\d)"""), "$1 minus $2")
                 .replace(Regex("""(\d)\s*[.,]\s*(\d)"""), "$1 point $2")
+                // A leading decimal point (".21") or a minus before a spoken number ("-twenty one")
+                // must stay visible too (re-audit 3, #2).
+                .replace(Regex("""(^|[^\d])\.\s*(\d)"""), "$1 point $2")
+                .replace(Regex("""(^|\s)-\s*(?=[a-z])"""), "$1 minus ")
                 .replace(Regex("""(\d)\s*[/:]\s*(\d)"""), "$1 slash $2")
                 .replace('-', ' ')
                 // Ordinary punctuation becomes a space; any other symbol (½, ℉, emoji, other scripts)

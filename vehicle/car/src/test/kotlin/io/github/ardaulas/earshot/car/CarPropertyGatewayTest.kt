@@ -224,4 +224,38 @@ class CarPropertyGatewayTest {
         result shouldBe null
         (waitedMs < 1_000) shouldBe true
     }
+
+    @Test
+    @Verifies("SR-22", "SR-6")
+    fun `a speed value stamped in the future counts as unreadable (re-audit 3, N1)`() =
+        runTest {
+            val gw = gateway(realClimate = false)
+            drive(0f, CarIds.GEAR_PARK)
+            car.floatTimestamps[CarIds.PERF_VEHICLE_SPEED to 0] = Long.MAX_VALUE / 2
+            stateAfter(gw, 3_000) shouldBe DrivingState.UNKNOWN
+        }
+
+    @Test
+    @Verifies("SR-22")
+    fun `a sample is stamped with the time before the reads, so a slow gear read ages it (re-audit 3, N1)`() =
+        runTest {
+            val gw = gateway(realClimate = false)
+            drive(0f, CarIds.GEAR_PARK)
+            nowMs = 1_000
+            car.nowNanos = nowMs * 1_000_000
+            car.floatTimestamps[CarIds.PERF_VEHICLE_SPEED to 0] = car.nowNanos
+            car.onReadInt = { nowMs += 10_000 }
+            gw.poll()
+            gw.latestSignals()?.atMs shouldBe 1_000L
+        }
+
+    @Test
+    @Verifies("SR-7", "SR-8")
+    fun `a write whose guard fails when the worker reaches it never touches the car (re-audit 3, N12)`() =
+        runTest {
+            car.areas[CarIds.HVAC_DEFROSTER] = intArrayOf(CarIds.WINDOW_FRONT)
+            val gw = gateway(realClimate = true)
+            gw.write(ClimateProperty.FRONT_DEFROST, 0, Long.MAX_VALUE) { false } shouldBe WriteResult.Aborted
+            car.writes.isEmpty() shouldBe true
+        }
 }
