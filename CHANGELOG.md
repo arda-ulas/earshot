@@ -36,6 +36,13 @@ test clips unless stated otherwise. Nothing here has run in a vehicle.
     bounded per utterance and released on lifecycle loss; native calls are safe against close during
     a call; screen output is shown only while parked and removed when driving starts; replies use an
     offline voice only; the merged-manifest check is a tested Python script.
+- Regression harness (`:harness`): the same core on the host, over 63 labelled utterances in 4
+  synthetic voices, clean and with noise at 20/10/5 dB, through host builds of the pinned whisper.cpp
+  and llama.cpp. Metrics: WER, intent and slot accuracy, policy correctness, false actions, wrong
+  confirmation questions, host-labelled latency. On 2026-09-30 (`clip`): policy 100% and no false
+  actions in every group. CI gates the text level (no models). Report in `docs/harness/report.md`.
+  The harness found that the language model's answer changed with whisper's trailing full stop, and
+  that unsupported features and some negated requests reached the model; all three are fixed.
 - Requirements, safety notes, threat model and README corrected where the review showed the text
   claimed more than the code did.
 

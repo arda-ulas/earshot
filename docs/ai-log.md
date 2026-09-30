@@ -232,3 +232,20 @@ how.
 - **Verified:** each regression test drives the scenario named in the review (input text, signal
   timeline or call sequence) through the real classes, with fakes only at the edges; `:core`, `:vehicle:car` and the manifest-check tests green locally; the Automotive rows re-run on
   the emulator after the second round. The final re-review result is recorded in the release notes.
+
+### Regression harness (workflow and agents)
+- **Asked:** build the Phase 2 harness: a CLI reusing `:core`, a labelled car test set with synthetic
+  voices and generated noise, host builds of the pinned engines, metrics, a CI gate (policy 100%, no
+  false actions) and a committed report.
+- **Produced:** a Claude workflow (builder, integrator, two adversarial reviewers, fixer) and then
+  a single agent produced the `:harness` module, the test set, host engines, baseline, report and CI
+  job, in a separate worktree.
+- **Changed:** the reviewers found that low-confidence decisions were never scored (a policy that
+  acted on unclear speech would have passed) and that the policy gate could pass with nothing
+  scored; both fixed with tests. Labels were rewritten twice as the core changed. The harness's own
+  findings led to core fixes (language-model input punctuation, unsupported features and negated
+  requests reaching the model); the harness did not edit core. The author's builder session reviewed
+  the diff, checked it for banned names and binaries, and re-ran the text gate on the final core.
+- **Verified:** `:harness:check`, the reference run and `compare` on the release branch; the audio
+  runs (about 25 minutes on the host) were run by the agent on the core before the last three-word
+  rule change, and the report says so.

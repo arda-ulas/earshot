@@ -387,8 +387,9 @@ parked. [10]
   took up to about 20 s to return, so the re-prompt came late. No action ran: the transcript was
   empty.
 - **Language-model misreads remain.** On the held-out set, "good morning" became a gear query and "it's
-  muggy" became cooler. On the harness's synthetic clips (host build, `clip`), "it's really stuffy in
-  here" became warmer for all four voices, the opposite direction. The confirmation question is the control, not the model's accuracy.
+  muggy" became cooler. On the harness's synthetic clips (host build, `clip`), misheard noisy
+  versions of "it's really stuffy in here" became warmer, the opposite direction; the correct
+  transcript now gives out of domain, after trailing punctuation is stripped before the model. The confirmation question is the control, not the model's accuracy.
 - **A short hazard list.** The eight hazards come from the author's project plan, which is not in this
   repository. There is no exposure or
   controllability rating, no systematic search for situations where the function, working as built, is

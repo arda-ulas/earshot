@@ -16,7 +16,8 @@ refuse. It runs on the Android phone emulator, not in a car.
 
 Version 0.3.0. v0.1.0 added the voice loop with hand-written rules, v0.2.0 the on-device
 language-model fallback, v0.2.1 the documentation. v0.3.0 runs the same app on the Android
-Automotive emulator through the car API, and fixes the findings of a hostile review of v0.2.1.
+Automotive emulator through the car API, adds a regression harness, and fixes the findings of a
+hostile review of v0.2.1.
 Release notes: [CHANGELOG.md](CHANGELOG.md).
 
 - **Exists:** a push-to-talk voice loop running offline on the arm64 API 36 phone emulator
@@ -24,7 +25,9 @@ Release notes: [CHANGELOG.md](CHANGELOG.md).
   the car API from the emulator's vehicle HAL; climate writes through the car API when the app is
   installed as a privileged app on the emulator, otherwise simulated); hand-written rules, a
   language-model fallback for indirect requests, and a policy that is the only path to the vehicle;
-  unit tests with requirement traceability checked in CI; a manual test plan run on synthetic clips.
+  unit tests with requirement traceability checked in CI; a manual test plan run on synthetic clips; a
+  regression harness that runs the same core on the host over 252 labelled synthetic clips, clean and
+  with noise, and gates policy correctness and false actions (text level in CI).
 - **Does not exist yet:** results from a person at the microphone (two checks pending); a calibrated
   confidence threshold; a real vehicle, real driving, or any users. The vehicle HAL values on the
   Automotive emulator are emulated, driven by scripts.
@@ -161,6 +164,17 @@ U9 and U10 change the vehicle HAL's climate values (for example 17.0 to 21.0 °C
 areas) and the reply is read back from the car. A-11 (signal lost) is not reproducible with this
 image's hooks and is covered by unit tests only. These are emulated vehicle values, not a car.
 
+**Regression harness** ([docs/harness/report.md](docs/harness/report.md), `clip` evidence only:
+synthetic voices from macOS `say`, run on the development host, not on a device). 63 utterances in 4
+voices, clean and with pink, brown and fan noise at 20, 10 and 5 dB, through host builds of the same
+pinned whisper.cpp and llama.cpp and the same core. On 2026-09-30 every group had 100% policy
+correctness and no false actions (no write that the label does not expect); intent accuracy was
+92.5% on clean audio and 75 to 91% at 5 dB. Some wrong-direction confirmation questions remain on
+misheard noisy clips ("It's really stuff in here" became warmer); they are counted, not gated, and
+nothing changes without a spoken yes. The deny-by-default vocabulary check refused 27 misheard real
+commands, the price of refusing misheard targets such as "siege warmer". CI runs the text-level gate
+only (no models, no audio). The confidence threshold is still not calibrated.
+
 **Latency.** Measured on the arm64 API 36 emulator on an Apple silicon laptop, debug build, clip
 input. These are not in-vehicle or on-phone figures.
 
@@ -183,7 +197,8 @@ emulator, speech-to-text took 5.3 to 7.6 s for short commands, so the 5 s action
 the actions (see [docs/manual-test-plan.md](docs/manual-test-plan.md)). Debug builds keep a caption
 strip for a later recording.
 
-**Unit tests and traceability.** 211 JVM unit tests at v0.3.0 (192 in `:core`, 19 in `:vehicle:car`;
+**Unit tests and traceability.** 312 JVM unit tests at v0.3.0 (201 in `:core`, 21 in `:vehicle:car`,
+90 in `:harness`;
 160 at v0.2.1; JUnit and Kotest property tests),
 including fault injection and fake-clock timing. Tests carry `@Verifies("SR-n")` for the
 requirements in [docs/requirements.md](docs/requirements.md);
@@ -218,8 +233,10 @@ wrong-direction answers. After tuning, the closest alternatives were Qwen3-0.6B 
 commands (25/32) and Qwen2.5-0.5B writing whole commands (20/32), also with no wrong-direction
 answers. The shipped model's four misses: "I can't feel my fingers" (out of domain), "it's muggy"
 (cooler), "clear the rear window" (out of domain) and "good morning" (`query_gear`). Outside that
-set, a later run on synthetic clips (`clip`, host build) found a wrong-direction answer: "it's really
-stuffy in here" became `warmer` for all four voices. It still needs a spoken yes before any change.
+set, the harness found that whisper's trailing full stop alone turned "It's really stuffy in here"
+into `warmer`; the model now gets the transcript without trailing punctuation, and the correct
+transcript gives `out_of_domain`. Misheard versions ("It's really stuff in here") still give `warmer`
+([docs/harness/report.md](docs/harness/report.md)). Any command from the model needs a spoken yes.
 
 Limits: 32 phrases is a small set, and one phrase is about 3 points; treat differences of one or two
 phrases as noise. The phrases are typed text, not speech. A separate AI agent audited each tuned
@@ -303,15 +320,16 @@ Decisions ([index](docs/adr/README.md)):
 | `vehicle/car/` | Android library: `CarPropertyGateway` over the car API (speed, gear, climate), with JVM tests on a fake car |
 | `app/` | Compose UI (single activity), audio capture, text-to-speech, developer view |
 | `models/` | `manifest.json` only: pinned revision, size, SHA-256 and licence per model |
+| `harness/`, `testset/car/`, `tools/host/` | Regression harness CLI, labelled test set (audio generated, not committed), host builds of the speech and language engines |
 | `automotive/` | Privileged-permission allowlist for the emulator install |
 | `scripts/` | Models and clips (`fetch-models.sh`, `push-models.sh`, `make-clips.sh`), Automotive emulator (`install-privileged.sh`, `aaos-scenario.sh`, `drive-clips.py`), checks (`traceability.py`, `check_manifest.py`) |
 | `docs/` | Safety, threat model, requirements, test plan, ADRs, language-model evaluation, AI log |
 
 ## Roadmap
 
-Next: a regression harness measuring false actions and policy correctness over a labelled test set
-(synthetic voices with added noise), which is also where the confidence threshold gets calibrated
-and the language-model fallback is measured together with speech-to-text and noise.
+Next: recordings of a person's voice for the harness (the slots exist in
+`testset/car/labels-recorded.jsonl`, recorded with `scripts/record-clips.sh`), calibrating the
+confidence threshold on them, and a gate on wrong-direction confirmation questions.
 
 Also planned: a captioned screen recording of the demo (an attempt in Phase 1 failed because screen
 recording on the emulator slowed speech-to-text past the 5 s action budget, see
