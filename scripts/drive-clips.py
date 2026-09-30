@@ -117,9 +117,14 @@ def play(clip, answer=None):
     t = wait_new(before)
     report(clip, t)
     if answer:
-        xml = dump()
-        select(answer, xml)
-        xml, btn = wait_enabled("Play clip")
+        for _ in range(3):
+            xml = dump()
+            select(answer, xml)
+            xml, btn = wait_enabled("Play clip")
+            if find(answer, xml):
+                break
+        else:
+            raise SystemExit(f"could not select {answer}")
         before = last_trace()
         tap(btn[0], btn[1])
         report(answer, wait_new(before))
