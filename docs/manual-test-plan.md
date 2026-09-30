@@ -156,6 +156,13 @@ off, confirmed, acted) and A-7 (parked and moving: question, yes, acted) pass. A
 A-7 was refused as expired: the clip driver took 25 s to select the answer clip, past the 10 s answer
 window, which is the intended behaviour; the driver now selects it while the question turn runs.
 
+Re-run on 2026-09-30 after the fixes for the third and fourth re-audits (`clip`, same emulator):
+parked, A-3, U5 and A-9 (both) pass; in `city`, A-4, A-6 and A-5 (speed) pass, and the developer view
+shows only "Hidden while driving" and a numbered clip player. A-7 in `city` passed once and was
+refused as expired twice: with the laptop loaded, the clip driver needed more than 10 s after the
+spoken question to select and play "yes". Timing logs from the passing run: question delivered at
+109.6 s (monotonic), answer at 119.1 s, acted.
+
 Speech-to-text on this AVD was 0.7–1.3 s per clip with the host quiet, and up to 7.8 s while the
 host was busy building (same laptop; not an in-vehicle figure). The phone emulator regression
 (M-rows) after the audit fixes is recorded separately below when run.
