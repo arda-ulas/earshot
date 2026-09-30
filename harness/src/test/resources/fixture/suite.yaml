@@ -1,0 +1,13 @@
+# Tiny text-only suite for the harness's own tests and for trying the CLI without audio or models.
+name: fixture
+domain: cabin climate
+audio: 16 kHz mono 16-bit WAV
+noise: [cabin_hum]
+snr_db: [20, 10, 5]
+thresholds:
+  max_intent_drop_points: 2
+  max_wer_rise_points: 3
+# Off here (the car suite uses unknown), so the fixture covers the other "fan off" branch: comfort, not
+# visibility-reducing. Leaving it out would mean unknown.
+context:
+  front_defrost: off
