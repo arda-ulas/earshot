@@ -88,6 +88,13 @@ Findings during these runs:
   up to 6 s and some turns hit the 10 s speech-to-text timeout, which re-prompted as designed.
   Whisper checks its abort flag between encoder passes, so an aborted turn can run past 10 s before
   it returns (up to about 20 s seen).
+- A captioned screen recording was attempted for the README. With `adb shell screenrecord` running
+  (540x1200, 2 Mbit/s), speech-to-text on this emulator took 5.3–7.6 s for short commands, so the
+  5 s action budget discarded the actions ("That took too long, so I didn't do it."), and longer turns
+  hit the 10 s speech-to-text timeout. That is SG-5 and the timeout working as designed, but not a
+  useful demo, so this release has no recording. The debug build keeps a pinned caption strip (what
+  the clip says, what the assistant replied, the driving state) for a later recording on an idle
+  machine.
 
 Findings during these runs, fixed before the results above:
 

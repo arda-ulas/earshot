@@ -59,15 +59,31 @@ fun AssistantScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     Scaffold { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            // Pinned above the scrolling content so it stays visible while the clip controls are used.
+            state.clipCaption?.let {
+                Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp)) { RecordingCaption(it, state) }
+            }
+            AssistantContent(state, onPress, onRelease, viewModel)
+        }
+    }
+}
+
+@Composable
+private fun AssistantContent(
+    state: UiState,
+    onPress: () -> Unit,
+    onRelease: () -> Unit,
+    viewModel: AssistantViewModel,
+) {
+    run {
         Column(
             Modifier
                 .fillMaxSize()
-                .padding(padding)
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            state.clipCaption?.let { RecordingCaption(it, state) }
             Header(state)
             AssistantPanel(state, onPress, onRelease)
             DeveloperPanel(
@@ -98,7 +114,11 @@ private fun RecordingCaption(
     ) {
         val style = MaterialTheme.typography.bodyMedium
         val color = MaterialTheme.colorScheme.inverseOnSurface
-        Text("Recording caption (debug build, synthetic clip input)", style = MaterialTheme.typography.labelSmall, color = color)
+        Text(
+            "Recording caption (debug build, synthetic clip input) \u00B7 ${state.drivingState}",
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+        )
         Text("Clip says: \u201C$clip\u201D", style = style, color = color, fontWeight = FontWeight.SemiBold)
         val reply = if (state.phase == Phase.THINKING) "\u2026" else state.lastSpoken?.let { "\u201C$it\u201D" } ?: "\u2026"
         Text("Assistant says: $reply", style = style, color = color)
