@@ -41,6 +41,7 @@ if [[ "${1:-}" == "--clips" ]]; then
   [[ -d "$root/clips" ]] || { echo "no clips/; run scripts/make-clips.sh" >&2; exit 1; }
   "$adb" shell mkdir -p "$dest/clips"
   "$adb" push "$root"/clips/*.wav "$dest/clips/"
+  [[ -f "$root/clips/captions.tsv" ]] && "$adb" push "$root/clips/captions.tsv" "$dest/clips/"
 fi
 
 "$adb" shell am force-stop "$pkg"

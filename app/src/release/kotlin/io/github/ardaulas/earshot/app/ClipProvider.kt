@@ -7,4 +7,10 @@ import java.io.File
 object ClipProvider {
     @Suppress("UNUSED_PARAMETER")
     fun clips(context: Context): List<File> = emptyList()
+
+    @Suppress("UNUSED_PARAMETER")
+    fun caption(
+        context: Context,
+        clip: String,
+    ): String? = null
 }

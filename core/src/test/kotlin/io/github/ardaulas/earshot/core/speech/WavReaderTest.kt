@@ -52,4 +52,23 @@ class WavReaderTest {
         val float = wav(shortArrayOf(0), 16_000, 1).also { ByteBuffer.wrap(it).order(ByteOrder.LITTLE_ENDIAN).putShort(20, 3) }
         assertThrows<IOException> { WavReader.read(float) }
     }
+
+    @Test
+    fun `malformed headers become IOException, never a crash`() {
+        val good = wav(shortArrayOf(0, 1, 2), 16_000, 1)
+        // fmt chunk claiming 4 bytes: fields would be read past the chunk.
+        val shortFmt = good.copyOf().also { ByteBuffer.wrap(it).order(ByteOrder.LITTLE_ENDIAN).putInt(16, 4) }
+        assertThrows<IOException> { WavReader.read(shortFmt) }
+        // A sample rate of 1 Hz would ask the resampler for a 16 000x larger buffer.
+        val tinyRate = good.copyOf().also { ByteBuffer.wrap(it).order(ByteOrder.LITTLE_ENDIAN).putInt(24, 1) }
+        assertThrows<IOException> { WavReader.read(tinyRate) }
+        // Truncated anywhere: always IOException.
+        for (n in 0 until good.size) {
+            try {
+                WavReader.read(good.copyOf(n))
+            } catch (e: IOException) {
+                // expected
+            }
+        }
+    }
 }

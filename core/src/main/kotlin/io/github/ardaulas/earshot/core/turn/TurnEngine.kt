@@ -154,7 +154,8 @@ class TurnEngine(
         val confident = policy.isConfident(transcript.confidence)
 
         // Interpret. Rules always run (cheap, and "cancel" must work even when unclear); the language
-        // model only runs on a confident rule miss, so unclear audio never reaches it.
+        // model only runs on a rule miss at or above the confidence threshold, so audio the policy would
+        // re-prompt for never reaches it.
         val ruleResult = turn.stage("rules") { rules.interpret(transcript.text) }
         var source = Source.RULES
         val command: Command =

@@ -51,9 +51,12 @@ rear window" -> out of domain, "good morning" -> query_gear (would be asked as "
   items as noise.
 - All utterances are typed text, not speech: speech-to-text errors are not part of this evaluation.
 - The auditors flagged "minor" leakage for every variant, mostly from three seed examples present in
-  all starting prompts ("I'm freezing" is itself a dev item). Dev scores are inflated by that; the
-  held-out scores are not, except that the seed example "I can't see out the windshield" is close to
-  the test item "I can't see through the windshield".
+  all starting prompts ("I'm freezing" is itself a dev item). Dev scores are inflated by that.
+- The held-out set was written after tuning, but five of the six tuned prompts happen to contain one
+  or two held-out items word for word as examples (for example "turn on the headlights", "which gear
+  is the car in"), and each of those items scored correct. The shipped prompt contains none, so its
+  28/32 is not inflated this way, while some of the others are. Separately, the seed example "I can't
+  see out the windshield" is close to the test item "I can't see through the windshield".
 - These numbers describe the fallback's interpretation only. The next phase's regression harness is
   where it gets measured together with speech-to-text, noise and the policy.
 

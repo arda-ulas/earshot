@@ -9,7 +9,19 @@ import java.nio.ByteOrder
  * linearly if needed. Used for pre-recorded clips; live audio comes straight from the microphone.
  */
 object WavReader {
-    fun read(bytes: ByteArray): FloatArray {
+    /** Throws [IOException] for anything that is not a sane 16-bit PCM WAV; never another exception. */
+    fun read(bytes: ByteArray): FloatArray =
+        try {
+            parse(bytes)
+        } catch (e: IOException) {
+            throw e
+        } catch (
+            @Suppress("TooGenericExceptionCaught") e: RuntimeException,
+        ) {
+            throw IOException("malformed WAV: ${e.javaClass.simpleName}")
+        }
+
+    private fun parse(bytes: ByteArray): FloatArray {
         val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
         if (bytes.size < HEADER || tag(buf, 0) != "RIFF" || tag(buf, 8) != "WAVE") throw IOException("not a WAV file")
         var pos = 12
@@ -24,6 +36,7 @@ object WavReader {
             val body = pos + 8
             when (id) {
                 "fmt " -> {
+                    if (size < FMT_MIN) throw IOException("fmt chunk too short: $size")
                     format = buf.getShort(body).toInt()
                     channels = buf.getShort(body + 2).toInt()
                     rate = buf.getInt(body + 4)
@@ -31,7 +44,7 @@ object WavReader {
                 }
 
                 "data" -> {
-                    if (format != 1 || bits != 16 || channels < 1 || rate <= 0) {
+                    if (format != 1 || bits != 16 || channels !in 1..MAX_CHANNELS || rate !in RATES) {
                         throw IOException("need 16-bit PCM, got format=$format bits=$bits channels=$channels")
                     }
                     val frames = size / (2 * channels)
@@ -72,4 +85,9 @@ object WavReader {
     ) = String(ByteArray(4) { buf.get(at + it) }, Charsets.US_ASCII)
 
     private const val HEADER = 12
+    private const val FMT_MIN = 16
+    private const val MAX_CHANNELS = 8
+
+    /** Bounds the resampling ratio, so a hostile header cannot ask for a huge output buffer. */
+    private val RATES = 8_000..96_000
 }

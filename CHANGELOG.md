@@ -3,6 +3,20 @@
 All results below come from the arm64 API 36 phone emulator with a simulated vehicle and synthetic
 test clips unless stated otherwise. Nothing here has run in a vehicle.
 
+## v0.2.1 (2026-09-29): Phase 1 documentation
+
+- Docs: `docs/safety.md` (hazards, safety goals, degradation modes as implemented), `docs/threat-model.md`,
+  ADRs 0001-0005 (speech-to-text, native module split, fail-safe defaults, language-model gating,
+  language-model choice), a full README, and the AI log. Written with AI assistance, reviewed per document
+  for accuracy and claim boundaries, and read before merge.
+- Fixes found by the docs review: two cancellation tests never ran (JUnit skips methods that return a
+  value) and now run; `WavReader` no longer crashes the debug clip player on a malformed header. 160 unit
+  tests.
+- Debug builds only: a pinned caption strip for screen recordings (what a synthetic clip says, the reply,
+  the driving state), read from `clips/captions.tsv`. No recording ships: on the emulator, screen
+  recording slowed speech-to-text past the 5 s action budget.
+- Dependabot ignores AndroidX updates that need compileSdk 37.
+
 ## v0.2.0 (2026-09-29): on-device language-model fallback
 
 - llama.cpp v0.5.0 over JNI in its own module, with the fixed prompt decoded once and kept in the KV
