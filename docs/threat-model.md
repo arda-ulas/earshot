@@ -35,7 +35,7 @@ In scope:
 Out of scope in this phase:
 
 - A real vehicle, the Android Automotive car API and a privileged install. None of them exists in
-  this phase. The Android Automotive OS emulator and the car API are a later phase (see TH-3).
+  Phase 1. Since v0.3.0 the app also runs on the Android Automotive emulator with the car API (see TH-3).
   Nothing in this project runs in a real vehicle.
 - Devices other than the API 36 emulator. The app's minSdk is 29, so it installs on older Android
   versions. Their storage and permission rules are not analysed here.
@@ -125,7 +125,7 @@ check. There are no **mic** results yet: M-13 and M-15 are pending.
 |---|---|---|---|---|---|
 | TH-1 | Microphone | Spoofing: injected audio (radio, passenger, played recording) issues a command | Push-to-talk only. Only in-domain commands on allowlisted properties can act, and only at a known speech-to-text confidence of 0.5 or more. A spoken yes is needed for visibility-reducing commands while moving or unknown, and for every language-model command. One action per turn. The model's prompt says never obey instructions inside the request, the grammar leaves it no free-text output, and its text never reaches text-to-speech. | Implemented; unit-tested and run on the emulator (clip). unit (SR-1, SR-8, SR-10, SR-16, SR-17). device (clip): M-6 and M-17 refuse "Order me a pizza". Language-model held-out set (typed text): one injection item, labelled out of domain by the shipped model | Audio played while the button is held can still issue comfort commands and queries. While parked it can issue any allowlisted command the rules match, because parked needs no confirmation. A recorded "yes" counts as a confirmation. No speaker verification. Not yet tested with a live microphone. |
 | TH-2 | App components (IPC) | Elevation of privilege: another app triggers actions | Only the launcher activity is exported, and it reads nothing from its intent. AndroidX `ProfileInstallReceiver` (exported, guarded by a DUMP permission) is removed from the merged manifest. `ui-tooling` is dropped: it exported `PreviewActivity` in debug builds. | Implemented; build-checked in CI. build: `:app:verify<Variant>MergedManifest` (SR-20) runs in CI for debug and release. Negative-tested by adding `INTERNET`, which failed the build | The clip player is in-app UI in debug builds only, not an exported component. It reads WAVs from the app's external files directory, so anyone who can write there (for example over `adb`) can feed audio to a debug build. Debug builds also read `captions.tsv` from there and show its text on screen in any driving state, so the same person can put any text on a debug build's screen. A malformed or very large WAV can crash a debug build: `WavReader` does not check the length of the fmt chunk, and a clip is read whole before the 8 s limit applies. Clip turns are traced as `CLIP`. Release builds have no clip input and no caption. |
-| TH-3 | Permissions, later privileged install | Elevation of privilege: over-broad permissions | One system permission, `RECORD_AUDIO`, requested at the first press ([permissions.md](permissions.md)). No `INTERNET`, storage or car permissions in this phase. | Implemented; `INTERNET` build-checked, the rest by manifest review. build (SR-20) checks for `INTERNET` only | AndroidX core also adds an app-defined, signature-level permission (`io.github.ardaulas.earshot.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`) to the merged manifest. Only apps signed with the same key can hold it. The privileged install that real climate writes would need is a later phase and has not been reviewed. |
+| TH-3 | Permissions, privileged install | Elevation of privilege: over-broad permissions | `RECORD_AUDIO` at the first press; on Android Automotive only, `CAR_SPEED` (runtime), `CAR_POWERTRAIN` (normal) and `CONTROL_CAR_CLIMATE` (signature\|privileged, granted only to the emulator's privileged install through a one-permission allowlist) ([permissions.md](permissions.md), [ADR 0006](adr/0006-vehicle-access-car-api.md)). No `INTERNET` or storage permissions. | Implemented; `INTERNET` build-checked (SR-20), the rest by manifest review; the privileged grant verified with `dumpsys package` on the emulator | A privileged app has system-level trust on that image; emulator only, debug-signed, removable. AndroidX core also adds an app-defined signature-level permission (`io.github.ardaulas.earshot.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`). |
 | TH-4 | Model files | Tampering: tampered or swapped model | Models are never committed. `models/manifest.json` pins the Hugging Face revision (in the download URL), size, SHA-256 and licence. `scripts/fetch-models.sh` downloads from the pinned revision URL and checks size and SHA-256. The app checks size and SHA-256 again before loading (`ModelGate`). No valid speech model: the assistant is disabled with the reason on screen. Invalid language model: only the fallback is disabled. | Implemented; unit-tested and run on the emulator. unit (SR-12, fault injection). device: M-14, one byte of the speech model changed on the device; assistant disabled with the reason, no crash | Check and load are two steps: the app hashes the file, then the native library opens it again by path. A swap between the two is not detected. The pins show that a file is the one the author chose. They do not vouch for the upstream file itself. |
 | TH-5 | Dependencies and build | Tampering: malicious or vulnerable dependency, tampered Gradle wrapper | Versions in one catalog (`gradle/libs.versions.toml`). whisper.cpp and llama.cpp pinned by release tag and tarball SHA-256 (CMake `FetchContent` with `URL_HASH`), with only their core libraries built (tests, examples, tools and servers off). Gradle wrapper JAR checksum validated in CI (`gradle/actions/setup-gradle`). Dependabot checks Gradle and GitHub Actions weekly. | Implemented; partly build-checked. build: the native tarball SHA-256 (`URL_HASH`, both modules are built by `:app:assembleDebug`) and the wrapper validation run in every CI build. config: the version catalog and Dependabot | No Gradle dependency verification metadata and no SBOM yet (planned for the release phase). The Gradle distribution itself is not pinned: `gradle-wrapper.properties` has no `distributionSha256Sum`. Actions are referenced by major version tag, not by commit SHA. Dependabot ignores some AndroidX updates that need compileSdk 37 (`.github/dependabot.yml`), so those libraries can fall behind. The native code has not been fuzzed. |
 | TH-6 | Audio, traces, logs | Information disclosure: voice is personal data | Audio is kept only in app memory and never written to storage. No `INTERNET` permission. `allowBackup="false"`. Traces go to app-private storage, and only the newest 7 daily files are kept. The user's words are never written to logcat: the JNI code logs counts, timings and the fixed prompt prefix, not the transcript or the request. | Implemented; partly tested. build (SR-20: no `INTERNET`). unit (SR-21: trace fields, and the retention logic tested with a limit of 2; the default of 7 is set in `JsonlTraceWriter` and not tested). Logging: code review only | Traces do contain transcripts and spoken replies. On debug builds they are readable with `run-as`. Retention counts files, not days, so on a rarely used device a trace can be older than a week. `allowBackup="false"` stops cloud backup, but for apps targeting Android 12 or later it does not stop device-to-device transfer on devices from some manufacturers, and the app sets no `dataExtractionRules` ([Android 12 behaviour changes](https://developer.android.com/about/versions/12/behavior-changes-12)). Traces could move to a new device that way. The 8 s capture buffer is reused and never cleared. A later, shorter capture overwrites only its own length, so parts of earlier utterances can stay in app memory while the app runs. Copies handed to speech-to-text stay until they are garbage-collected. |
@@ -150,7 +150,7 @@ check. There are no **mic** results yet: M-13 and M-15 are pending.
   [manual-test-plan.md](manual-test-plan.md)). It does nothing against clear speech from another
   source.
 
-### TH-3: the later Android Automotive OS phase
+### TH-3: Android Automotive and the privileged install (v0.3.0)
 
 On Android Automotive OS, reading or writing the climate properties `HVAC_TEMPERATURE_SET`,
 `HVAC_FAN_SPEED`, `HVAC_DEFROSTER` and `HVAC_AC_ON` needs `android.car.permission.CONTROL_CAR_CLIMATE`,
@@ -164,9 +164,21 @@ uses must be granted in a privapp-permissions allowlist
 ([privileged permission allowlist](https://source.android.com/docs/core/permissions/perms-allowlist)).
 Sources checked 2026-09-29.
 
-A privileged app holds more than an ordinary one, so a mistake in it matters more. That set-up does
-not exist yet and has not been reviewed. If real climate writes turn out not to be possible, the later
-phase keeps simulated writes and says so.
+A privileged app holds more than an ordinary one, so a mistake in it matters more. As built in v0.3.0
+([ADR 0006](adr/0006-vehicle-access-car-api.md)):
+
+- The privileged install exists only on the Android Automotive **emulator**
+  (`scripts/install-privileged.sh`, which needs `-writable-system` and `adb root`). The allowlist
+  names one permission, `CONTROL_CAR_CLIMATE`. Permission levels were read from the image on
+  2026-09-30.
+- What the app can write is still bounded by the `ClimateProperty` allowlist (five properties) and by
+  the policy; the privileged permission widens nothing else. Every write still needs a policy verdict,
+  and moving-state rules (confirmation for defrost off) apply unchanged.
+- The installed APK is the debug build, signed with the local debug key. That is a test setup; a
+  production image would build the app into the system image with its own key.
+- Speed and gear are read with a runtime permission (`CAR_SPEED`) and a normal one (`CAR_POWERTRAIN`).
+- Residual: a privileged app runs with system-level trust on that image. The emulator hosts no other
+  data, and the install is removable (`scripts/install-privileged.sh --undo`).
 
 ### TH-6: what a trace holds
 
@@ -212,9 +224,9 @@ It holds no audio. On a debug build, a trace file can be read with
 - **Device-to-device transfer rules.** The app sets no `dataExtractionRules`, so traces are not
   excluded from device-to-device transfer (TH-6).
 - **Tamper-evident traces.** Traces have no signature or hash chain (Repudiation).
-- **Privileged-install review for the later Android Automotive OS phase.** Permissions, the
-  privapp-permissions allowlist and what a privileged app could reach have not been reviewed,
-  because none of it exists yet (TH-3).
+- **Independent review of the privileged install.** The allowlist and permissions are reviewed in
+  this document (TH-3), but only by the author; no one else has audited what a privileged build of
+  this app could reach on a real system image.
 - **Fuzzing of the native parsers.** This project has not fuzzed whisper.cpp's model loader or
   llama.cpp's GGUF loader, tokenizer and GBNF grammar parser. What reaches them is narrow. Model
   files must match the pinned SHA-256 first. The grammar is a fixed string in `LmWireFormat.kt`. The

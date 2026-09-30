@@ -59,4 +59,4 @@ jobs:
       # Builds whisper.cpp with the NDK; the merged-manifest check enforces SR-20 (no INTERNET,
       # nothing exported but the launcher activity).
       - name: Build, ktlint, manifest check
-        run: ./gradlew :app:assembleDebug :app:ktlintCheck :native:whisper:ktlintCheck :native:llama:ktlintCheck :app:verifyDebugMergedManifest :app:verifyReleaseMergedManifest
+        run: ./gradlew :app:assembleDebug :app:ktlintCheck :vehicle:car:testDebugUnitTest :vehicle:car:ktlintCheck :native:whisper:ktlintCheck :native:llama:ktlintCheck :app:verifyDebugMergedManifest :app:verifyReleaseMergedManifest
