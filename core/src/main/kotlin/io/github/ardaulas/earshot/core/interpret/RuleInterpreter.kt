@@ -114,6 +114,17 @@ class RuleInterpreter {
                 RuleResult.Rejected("more than one action")
             }
 
+            // Every word that sets a value must be the one the command used: a number next to off,
+            // max or an on/off switch is a second value, never dropped ("fan to 3 off", "turn off the
+            // ac at 5") (pre-review of re-audit 5, #1).
+            NUMBER.containsMatchIn(t) && !usesNumber(actions.single()) -> {
+                RuleResult.Rejected("unused value")
+            }
+
+            NUMBER.containsMatchIn(t) && (OFF.containsMatchIn(t) || FAN_MAX_WORD.containsMatchIn(t)) -> {
+                RuleResult.Rejected("more than one value")
+            }
+
             // One target, one direction, one number: a second request must never vanish silently, and
             // a number must never be truncated to a valid one (pre-review F1, F2, F4).
             targets(t) > 1 -> {
@@ -162,6 +173,23 @@ class RuleInterpreter {
             }
         }
     }
+
+    /** Commands whose value comes from a number in the utterance. */
+    private fun usesNumber(r: RuleResult): Boolean =
+        when (r) {
+            is RuleResult.Matched -> {
+                val c = r.command
+                c is Command.SetTemp || c is Command.AdjustTemp || (c is Command.SetFan && c.level in 1..Bounds.FAN_LEVEL.last)
+            }
+
+            is RuleResult.OutOfRange -> {
+                true
+            }
+
+            else -> {
+                false
+            }
+        }
 
     private fun isTemperature(r: RuleResult): Boolean =
         when (r) {
@@ -332,6 +360,7 @@ class RuleInterpreter {
         val COOLER_WORD = Regex("""\b(cooler|colder|cool|down|lower|decrease)\b""")
         val TEMP_TARGET = Regex("""\b(temperature|thermostat|heat|heating|heater|degrees?|warmer|hotter|cooler|colder|warm)\b""")
         val FAN_TARGET = Regex("""\bfan\b""")
+        val FAN_MAX_WORD = Regex("""\b(max|maximum|full|highest)\b""")
         val SENTENCE_BREAK = Regex("""[;]|[.!?](?=\s*\S)""")
         val ABBREVIATED_AC = Regex("""(?i)\ba\.\s?c\.?""")
         val COMMAND_VERB = Regex("""\b(set|turn|switch|make|put|change|raise|lower|increase|decrease|keep|get)\b""")

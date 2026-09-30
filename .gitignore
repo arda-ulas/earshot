@@ -46,3 +46,4 @@ testset/*/noise/
 
 # Harness reports (./gradlew :harness:run ... --out reports/<name>)
 reports/
+__pycache__/

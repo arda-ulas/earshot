@@ -39,7 +39,8 @@ test clips unless stated otherwise. Nothing here has run in a vehicle.
   - The driving-state resolver drops readings stamped in the future instead of storing them; model
     snapshots are serialised and verified before they are published; debug clips longer than 8 s
     are refused whole; speech and its stop are serialised, so a stop can no longer let parked-only
-    speech play on; a gap in the captured audio refuses the utterance.
+    speech play on; a microphone error, or more than 1 s of audio missing from the hold, refuses the
+    utterance; a number next to a second value ("fan to 3 off") is refused.
   - The privileged installer sends every command to the emulator it checked; the manifest check
     refuses a non-literal `android:exported`.
   - Traces: a hard 1 MB per file, expired files deleted at start-up as well, and a turn that could

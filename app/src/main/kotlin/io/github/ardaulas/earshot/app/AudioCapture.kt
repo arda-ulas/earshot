@@ -107,7 +107,9 @@ class AudioCapture(
                         if (n <= 0) {
                             // An error, or the recorder stopped. After key-up that is the normal end;
                             // before it, the utterance is incomplete (re-audit 3, N13).
-                            if (session === s) s.failedAtMs = clock.millis()
+                            // A negative value is an error code, whatever key-up did meanwhile; zero
+                            // is the normal end only once key-up has taken the session.
+                            if (n < 0 || session === s) s.failedAtMs = clock.millis()
                             break
                         }
                         s.length += n

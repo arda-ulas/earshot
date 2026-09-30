@@ -52,7 +52,7 @@ object TextNormalizer {
             raw
                 .lowercase()
                 // Every dash-like character is a minus or a hyphen, never silently dropped (pre-review F4).
-                .replace(Regex("""[\u2010-\u2015\u2212\uFE63\uFF0D]"""), "-")
+                .replace(Regex("""[\u02D7\u2010-\u2015\u2212\uFE63\uFF0D]"""), "-")
                 // Curly apostrophes and quotes: "don’t" must stay a negation (audit re-check #1).
                 .replace('\u2019', '\'')
                 .replace('\u2018', '\'')
@@ -86,6 +86,8 @@ object TextNormalizer {
                     " minus ",
                 ).replace(Regex("""(^|\s)-\s*(?=[a-z])"""), "$1 minus ")
                 .replace(Regex("""(\d)\s*[/:]\s*(\d)"""), "$1 slash $2")
+                // Any other hyphen touching a digit ("21-") is not understood, so it cannot vanish.
+                .replace(Regex("""(\d)\s*-|-\s*(?=\d)"""), "$1 $UNKNOWN_SYMBOL ")
                 .replace('-', ' ')
                 // Ordinary punctuation becomes a space; any other symbol (½, ℉, emoji, other scripts)
                 // becomes a word no rule knows, so it can never be dropped from an action (pre-review F4).

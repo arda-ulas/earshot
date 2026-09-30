@@ -586,4 +586,27 @@ class AuditRegressionTest {
         for (t in 1_000L..4_800L step 200) resolver.update(SignalSample(30.0, Gear.DRIVE, t), nowMs = t)
         resolver.current(5_000) shouldBe DrivingState.MOVING
     }
+
+    @Test
+    @Verifies("SR-1", "SR-3")
+    fun `a second value for the same feature is refused, never dropped (pre-review of re-audit 5)`() {
+        val rules = RuleInterpreter()
+        for (text in listOf(
+            "fan to 3 off",
+            "fan at level 3 off",
+            "fan 3 max",
+            "fan to 2 full",
+            "max fan 2",
+            "turn the fan off 3",
+            "turn off the ac at 5",
+            "set temperature to 21-",
+            "set temperature to \u02D721",
+        )) {
+            (rules.interpret(text) is RuleResult.Matched) shouldBe false
+        }
+        rules.interpret("fan to 3") shouldBe RuleResult.Matched(Command.SetFan(3))
+        rules.interpret("turn the fan to max") shouldBe RuleResult.Matched(Command.SetFan(Bounds.FAN_LEVEL.last))
+        io.github.ardaulas.earshot.core.speech.AudioGate
+            .clean("Turn on the ac (just kidding music playing)") shouldBe "Turn on the ac just kidding music playing"
+    }
 }

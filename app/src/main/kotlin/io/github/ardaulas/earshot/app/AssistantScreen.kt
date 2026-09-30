@@ -263,7 +263,7 @@ private fun DeveloperPanel(
             // Under the platform's UX restrictions the activity is distraction optimized: no test
             // controls, model details or free text. Only a debug build keeps its clip player, the test
             // instrument for the moving rows of the manual test plan (re-audit 3, N6).
-            if (state.uxRestricted == true && state.drivingState != DrivingState.PARKED) {
+            if ((state.uxRestricted == true || state.carApi) && state.drivingState != DrivingState.PARKED) {
                 Text("Hidden while driving (platform UX restrictions).", style = MaterialTheme.typography.bodySmall)
                 // Debug builds only; clip numbers, never file names, while restricted (re-audit 4, N6).
                 if (state.clips.isNotEmpty()) {

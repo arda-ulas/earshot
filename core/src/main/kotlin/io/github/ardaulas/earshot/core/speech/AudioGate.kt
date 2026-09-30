@@ -36,7 +36,7 @@ object AudioGate {
         Regex(
             """^\s*(blank_audio|silence|music|noise|applause|laughter|laughs|inaudible|static|wind|beep|coughs?|sighs?|""" +
                 """(soft |upbeat |dramatic |gentle )?music( playing)?|no speech|foreign language|speaking in foreign language|""" +
-                """[a-z ]*(blowing|playing|chirping|humming|buzzing|ringing|clicking|rustling|running|honking))\s*$""",
+                """wind blowing|birds chirping|engine running|engine revving|phone ringing|horn honking|car horn|typing|clicking)\s*$""",
             RegexOption.IGNORE_CASE,
         )
 
