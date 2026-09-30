@@ -17,8 +17,8 @@ android {
         applicationId = "io.github.ardaulas.earshot"
         minSdk = 29
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.2.1"
+        versionCode = 4
+        versionName = "0.3.0"
         ndk { abiFilters += "arm64-v8a" }
     }
 

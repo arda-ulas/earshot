@@ -14,17 +14,20 @@ refuse. It runs on the Android phone emulator, not in a car.
 
 ## Status
 
-Version 0.2.x, Phase 1 of a larger plan. v0.1.0 added the voice loop with hand-written rules, v0.2.0
-the on-device language-model fallback, and v0.2.1 the documentation plus a debug-only caption strip
-for screen recordings. Release notes: [CHANGELOG.md](CHANGELOG.md).
+Version 0.3.0. v0.1.0 added the voice loop with hand-written rules, v0.2.0 the on-device
+language-model fallback, v0.2.1 the documentation. v0.3.0 runs the same app on the Android
+Automotive emulator through the car API, and fixes the findings of a hostile review of v0.2.1.
+Release notes: [CHANGELOG.md](CHANGELOG.md).
 
-- **Exists:** a push-to-talk voice loop running offline on the arm64 API 36 phone emulator;
-  hand-written rules, a language-model fallback for indirect requests, and a policy that is the only
-  path to the simulated vehicle; unit tests with requirement traceability checked in CI; a manual test
-  plan run on synthetic clips.
-- **Does not exist yet:** results from a person at the microphone (two checks pending); a regression
-  harness (the 0.5 confidence threshold is not calibrated); the Android Automotive emulator, the car
-  API, a real vehicle, or any users.
+- **Exists:** a push-to-talk voice loop running offline on the arm64 API 36 phone emulator
+  (simulated vehicle) and on the Android Automotive 15 arm64 emulator (speed and gear read through
+  the car API from the emulator's vehicle HAL; climate writes through the car API when the app is
+  installed as a privileged app on the emulator, otherwise simulated); hand-written rules, a
+  language-model fallback for indirect requests, and a policy that is the only path to the vehicle;
+  unit tests with requirement traceability checked in CI; a manual test plan run on synthetic clips.
+- **Does not exist yet:** results from a person at the microphone (two checks pending); a calibrated
+  confidence threshold; a real vehicle, real driving, or any users. The vehicle HAL values on the
+  Automotive emulator are emulated, driven by scripts.
 
 ## What it does
 
@@ -63,9 +66,9 @@ hold the button, or F2 / the voice-assist key (stands in for a steering-wheel bu
 
 | Part | In this phase | Not in this phase |
 |---|---|---|
-| Vehicle | `SimulatedVehicleGateway`, in the app process: climate values, speed and gear | No real vehicle, no car API, no car permissions |
-| Driving | Scripted scenarios: Parked; City drive (park, then drive, up to 50 km/h); Signal lost (50 km/h, signals stop at 5 s) | No real driving-state signals |
-| Platform | Android phone emulator, API 36, arm64 | Not the Android Automotive emulator yet |
+| Vehicle | Phone: `SimulatedVehicleGateway`, in the app process. Automotive emulator: the car API over the emulator's vehicle HAL (`CarPropertyGateway`) | No real vehicle |
+| Driving | Phone: scripted scenarios (Parked; City drive; Signal lost). Automotive emulator: speed and gear set in the vehicle HAL by `scripts/aaos-scenario.sh` | No real driving; signal loss is not reproducible on the Automotive emulator |
+| Platform | Android phone emulator (API 36, arm64) and Android Automotive emulator (Android 15, arm64) | No vehicle hardware |
 | Voice input | The emulator's microphone (host audio input), or synthetic clips in debug builds | No live-microphone results yet |
 | Models | whisper.cpp and llama.cpp run on the emulator, offline | No cloud service of any kind |
 | People | None | No drivers, no users, no user study |
@@ -110,6 +113,21 @@ source, verdict, reply and per-stage timings. Traces are also kept as JSONL in a
 (7 daily files); on a debug build,
 `adb shell run-as io.github.ardaulas.earshot cat files/traces/<date>.jsonl`.
 
+**On the Android Automotive emulator** (tried only on an Apple silicon Mac): the image
+`system-images;android-35-ext15;android-automotive;arm64-v8a`, an AVD with 6 GB RAM, started with
+`-writable-system` for the privileged install. The app asks for `CAR_SPEED` at start.
+
+```bash
+./gradlew :app:assembleDebug
+scripts/install-privileged.sh  # emulator only: privileged copy so climate writes reach the vehicle HAL
+scripts/push-models.sh         # also handles the Automotive emulator's secondary user
+scripts/aaos-scenario.sh city  # or parked / stopped / status: speed and gear set in the vehicle HAL
+```
+
+Without the privileged install the app still reads speed and gear from the car API, and climate
+commands go to the simulated vehicle; the developer view says which one is in use. See
+[ADR 0006](docs/adr/0006-vehicle-access-car-api.md) and [ADR 0007](docs/adr/0007-ux-restrictions-stricter-wins.md).
+
 Unit tests and traceability need no emulator and build no native code: `./gradlew :core:check` and
 `python3 scripts/traceability.py --check`. Gradle still configures the Android modules for these
 tasks. CI runs them on Ubuntu with the Android SDK installed; a run without the SDK has not been
@@ -135,6 +153,14 @@ probability (0.89) and was refused as out of domain instead of re-prompted. With
 a transcript now goes to the language model; any command the model picks still needs a spoken yes.
 Token probability is a weak signal for unclear speech.
 
+**Android Automotive** (rows A-1 to A-11 of the manual test plan, 2026-09-30, `clip` input on the
+Android 15 arm64 Automotive emulator, speed and gear set through the vehicle HAL's test hooks). Parked,
+moving and stopped-in-drive states are read correctly from the car API; the platform's UX
+restrictions switch the assistant to voice only while moving; with the privileged install, U1, U2,
+U9 and U10 change the vehicle HAL's climate values (for example 17.0 to 21.0 °C in all five seat
+areas) and the reply is read back from the car. A-11 (signal lost) is not reproducible with this
+image's hooks and is covered by unit tests only. These are emulated vehicle values, not a car.
+
 **Latency.** Measured on the arm64 API 36 emulator on an Apple silicon laptop, debug build, clip
 input. These are not in-vehicle or on-phone figures.
 
@@ -157,7 +183,8 @@ emulator, speech-to-text took 5.3 to 7.6 s for short commands, so the 5 s action
 the actions (see [docs/manual-test-plan.md](docs/manual-test-plan.md)). Debug builds keep a caption
 strip for a later recording.
 
-**Unit tests and traceability.** 160 JVM unit tests run at v0.2.1 (157 at v0.2.0; JUnit and Kotest property tests),
+**Unit tests and traceability.** 211 JVM unit tests at v0.3.0 (192 in `:core`, 19 in `:vehicle:car`;
+160 at v0.2.1; JUnit and Kotest property tests),
 including fault injection and fake-clock timing. Tests carry `@Verifies("SR-n")` for the
 requirements in [docs/requirements.md](docs/requirements.md);
 [docs/traceability.md](docs/traceability.md) is generated from them and checked in CI. The check
@@ -267,32 +294,26 @@ Decisions ([index](docs/adr/README.md)):
 
 | Path | Contents |
 |---|---|
-| `core/` | Pure Kotlin/JVM, no Android imports: commands, rules, language-model wire format, policy, turn engine, simulated vehicle, traces, model checks, and all unit tests |
+| `core/` | Pure Kotlin/JVM, no Android imports: commands, rules, language-model wire format, policy, turn engine, simulated vehicle, traces, model checks, and their unit tests |
 | `native/whisper/` | whisper.cpp v1.9.4 over JNI, in its own Android library and `.so` |
 | `native/llama/` | llama.cpp v0.5.0 over JNI, in its own Android library and `.so` (both vendor ggml; see ADR 0002) |
+| `vehicle/car/` | Android library: `CarPropertyGateway` over the car API (speed, gear, climate), with JVM tests on a fake car |
 | `app/` | Compose UI (single activity), audio capture, text-to-speech, developer view |
 | `models/` | `manifest.json` only: pinned revision, size, SHA-256 and licence per model |
-| `scripts/` | `fetch-models.sh`, `push-models.sh`, `make-clips.sh`, `traceability.py` |
+| `automotive/` | Privileged-permission allowlist for the emulator install |
+| `scripts/` | Models and clips (`fetch-models.sh`, `push-models.sh`, `make-clips.sh`), Automotive emulator (`install-privileged.sh`, `aaos-scenario.sh`, `drive-clips.py`), checks (`traceability.py`, `check_manifest.py`) |
 | `docs/` | Safety, threat model, requirements, test plan, ADRs, language-model evaluation, AI log |
 
 ## Roadmap
 
-Next: a regression harness measuring false actions and policy correctness.
+Next: a regression harness measuring false actions and policy correctness over a labelled test set
+(synthetic voices with added noise), which is also where the confidence threshold gets calibrated
+and the language-model fallback is measured together with speech-to-text and noise.
 
-Also planned: a captioned screen recording of the demo. The debug build already has a pinned caption
-strip for it; an attempt in this phase failed because screen recording on the emulator slowed
-speech-to-text past the 5 s action budget (see [docs/manual-test-plan.md](docs/manual-test-plan.md)).
-
-The harness is also where the confidence threshold gets calibrated and where the language-model
-fallback is measured together with speech-to-text and noise. Later:
-
-- The Android Automotive emulator, reading speed and gear through the car API (values from the
-  emulator's vehicle HAL, still emulated), with the car API in place of the simulated gateway.
-- Climate writes through the car API need a signature|privileged permission
-  ([VehiclePropertyIds](https://developer.android.com/reference/android/car/VehiclePropertyIds)), so
-  they will likely need a privileged install. If that is not possible, writes stay simulated, and the
-  docs will say so.
-- Gradle dependency verification metadata and an SBOM, planned for a release phase.
+Also planned: a captioned screen recording of the demo (an attempt in Phase 1 failed because screen
+recording on the emulator slowed speech-to-text past the 5 s action budget, see
+[docs/manual-test-plan.md](docs/manual-test-plan.md)); live-microphone checks; Gradle dependency
+verification metadata and an SBOM.
 
 ## Licence
 

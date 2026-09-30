@@ -1,7 +1,39 @@
 # Changelog
 
-All results below come from the arm64 API 36 phone emulator with a simulated vehicle and synthetic
+All results below come from emulators (the arm64 API 36 phone emulator with a simulated vehicle, and
+from v0.3.0 the Android Automotive 15 arm64 emulator with emulated vehicle HAL values) and synthetic
 test clips unless stated otherwise. Nothing here has run in a vehicle.
+
+## v0.3.0 (2026-10-01): Android Automotive, and fixes from a hostile review
+
+- Android Automotive emulator: a new `:vehicle:car` module reads speed and gear through the car API
+  (`CarPropertyGateway`), with stale, NaN or missing speed handled as unknown. The platform's UX
+  restrictions are combined with the app's own driving state, stricter wins (ADR 0007). Climate
+  writes go through the car API only when `CONTROL_CAR_CLIMATE` is granted, which on the emulator
+  needs the privileged install in `scripts/install-privileged.sh` (emulator only); otherwise climate
+  stays simulated (ADR 0006). `:core` stays free of Android imports.
+- Manual test plan rows A-1 to A-11 on the Automotive emulator (`clip` input): 10 pass, signal loss
+  not reproducible with the image's hooks. The phone path is unchanged.
+- An external hostile review of v0.2.1 found 15 P1 and 8 P2 issues, and a re-review of the first fixes
+  found more. Each P1 has a regression test. Main changes:
+  - Rules refuse negated, questioning, multi-request, unsupported-target and unsupported-unit
+    requests, and words outside the action vocabulary; signed or fractional numbers are out of range,
+    never rounded to a valid value. Refused requests never reach the language model.
+  - A spoken yes only confirms the pending question it answers, and only after the question was
+    delivered, and an answer that started before the question was delivered is not accepted; a new
+    command drops the pending one.
+  - The driving state is re-checked right before each write, after the read-back values are taken;
+    the 5 s budget from the end of the utterance is also enforced by the vehicle gateway before its
+    first write.
+  - The driving-state resolver rejects negative, NaN, backwards and future samples and gaps; park
+    with a non-zero or unknown speed is unknown.
+  - Model files are copied to app-private storage and checked there before loading; a trace write
+    failure no longer drops the turn result; traces are bounded by age and size; audio capture is
+    bounded per utterance and released on lifecycle loss; native calls are safe against close during
+    a call; screen output is shown only while parked and removed when driving starts; replies use an
+    offline voice only; the merged-manifest check is a tested Python script.
+- Requirements, safety notes, threat model and README corrected where the review showed the text
+  claimed more than the code did.
 
 ## v0.2.1 (2026-09-29): Phase 1 documentation
 
