@@ -256,7 +256,8 @@ class RuleInterpreter {
             Regex(
                 """\b(seat|seats|steering|wheel|mirror|mirrors|sunroof|roof|door|doors|lock|locks|light|lights|headlights|window|windows|massage|trunk|boot)\b""",
             )
-        val DOMAIN_WORD = Regex("""\b(warmer|cooler|hotter|colder|heat|heated|heating|cool|cooling|warm|temperature|fan|defrost|ac)\b""")
+        val DOMAIN_WORD =
+            Regex("""\b(warmer|cooler|hotter|colder|heat|heated|heating|heater|hot|cold|cool|cooling|warm|temperature|fan|defrost|ac)\b""")
         val CONJUNCTION = Regex("""\b(and|but|then|also|plus)\b""")
         val STEP_WORDS = Regex("""\b(up|down|by|warmer|cooler|raise|lower|increase|decrease)\b""")
         val UNSUPPORTED_UNIT = Regex("""\b(fahrenheit|kelvin|percent|f)\b""")

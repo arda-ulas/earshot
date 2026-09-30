@@ -485,4 +485,16 @@ class AuditRegressionTest {
         lm.forModel("It's really stuffy in here.") shouldBe "It's really stuffy in here"
         lm.forModel("  I'm  freezing!? ") shouldBe "I'm freezing"
     }
+
+    @Test
+    @Verifies("SR-1")
+    fun `negated requests with heater, hot or cold are refused by the rules, not sent to the language model (harness finding)`() =
+        runTest {
+            val r = rig(DrivingState.PARKED)
+            for (text in listOf("Don't make it hot", "Don't turn on the heater", "Do not turn the heater off", "don't make it cold")) {
+                r.say(text).outcome shouldBe Outcome.REFUSED
+            }
+            r.lm.callCount shouldBe 0
+            r.vehicle.writeCount shouldBe 0
+        }
 }
