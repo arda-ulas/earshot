@@ -134,8 +134,8 @@ check. There are no **mic** results yet: M-13 and M-15 are pending.
 ### TH-1: what injected speech can reach
 
 - **Rule path.** While moving or with the driving state unknown, comfort commands and queries run
-  with a voice-only reply. Visibility-reducing commands (defrost off; fan off while the front defrost
-  is on or unknown) need a spoken yes. Screen requests are refused. While parked, all of them run
+  with a voice-only reply. Visibility-reducing commands (defrost off; fan off, judged as if the front
+  defrost were on) need a spoken yes. Screen requests are refused. While parked, all of them run
   without confirmation.
 - **Language-model path.** The model can only pick one of ten labels: `warmer` and `cooler` (a 2 °C
   change), AC on or off, front or rear defrost on, three queries, and `out_of_domain`. It cannot

@@ -278,8 +278,8 @@ What the code does:
   Only five climate properties can be written; nothing else can be expressed as a write.
 - Unknown or stale driving state is handled as moving, and so is drive or reverse at a standstill.
 - While moving or unknown: no assistant output on screen, replies of at most 12 words, and a spoken
-  yes for visibility-reducing commands (defrost off; fan off while the front defrost is on or
-  unknown). Status text still shows. Under the platform's UX restrictions the developer view is
+  yes for visibility-reducing commands (defrost off; fan off, because the front defrost is
+  treated as on: a defrost reading could change before the write). Status text still shows. Under the platform's UX restrictions the developer view is
   hidden except for the debug build's clip player; otherwise it keeps its test controls but hides
   climate values and the last turn, and the debug caption is hidden. A result shown while parked is not
   rendered once the car is no longer parked, and a long parked reply is stopped.
@@ -290,8 +290,8 @@ What the code does:
   reading the value back. The 5 s deadline and the driving state are re-checked before each write,
   and again by the gateway just before the first effect, where a cancelled turn or a changed driving
   state stops it; the driving state used is the latest polled reading, not a new one. On the car API
-  the 1 s write timeout stops waiting but cannot interrupt a platform call that has already started,
-  so the reply then says the change could not be confirmed.
+  the 1 s write timeout stops waiting; a write still queued then does not start, but a platform call
+  that has already started runs to its end, so the reply says the change could not be confirmed.
 - Permissions: `RECORD_AUDIO`; on Android Automotive only, `CAR_SPEED`, `CAR_POWERTRAIN` and
   `CONTROL_CAR_CLIMATE` (the last granted only to the emulator's privileged install); AndroidX core's
   own signature-level `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`. There is no `INTERNET`, and only the

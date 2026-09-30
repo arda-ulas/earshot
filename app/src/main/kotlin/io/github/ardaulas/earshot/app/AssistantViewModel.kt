@@ -19,6 +19,7 @@ import io.github.ardaulas.earshot.core.model.ModelManifest
 import io.github.ardaulas.earshot.core.policy.DrivingState
 import io.github.ardaulas.earshot.core.policy.Policy
 import io.github.ardaulas.earshot.core.policy.withUxRestrictions
+import io.github.ardaulas.earshot.core.speech.AudioGate
 import io.github.ardaulas.earshot.core.speech.WavReader
 import io.github.ardaulas.earshot.core.time.MonotonicClock
 import io.github.ardaulas.earshot.core.trace.HostInfo
@@ -151,7 +152,9 @@ class AssistantViewModel(
         viewModelScope.launch { speaker.available.collect { a -> _state.update { it.copy(ttsAvailable = a) } } }
         viewModelScope.launch { loadModels() }
         // Old traces go at start-up too, not only when the next turn is written (re-audit 3, N16).
-        viewModelScope.launch(Dispatchers.IO) { runCatching { traces.purge() } }
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { traces.purge() }.onFailure { e -> _state.update { it.copy(message = "Old traces not deleted: $e") } }
+        }
         refreshClips()
     }
 
@@ -184,7 +187,7 @@ class AssistantViewModel(
             val signals = vehicle.latestSignals()
             val driving =
                 synchronized(resolver) {
-                    resolver.update(signals)
+                    resolver.update(signals, clock.millis())
                     resolver.current(clock.millis())
                 }.withUxRestrictions(uxRestricted())
             if (driving != DrivingState.PARKED) revokeParkedOutput()
@@ -387,7 +390,9 @@ class AssistantViewModel(
                     }
                 }
             val now = clock.millis()
-            Captured(pcm, now, now, overflowed = false)
+            // A clip longer than the capture limit is refused whole, as a long hold is; the engine
+            // would otherwise keep only its first 8 s (re-audit 4, N19).
+            Captured(pcm, now, now, overflowed = pcm.size > AudioGate.MAX_SECONDS * AudioGate.SAMPLE_RATE)
         }
     }
 

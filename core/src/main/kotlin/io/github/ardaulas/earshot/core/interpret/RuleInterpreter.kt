@@ -94,6 +94,26 @@ class RuleInterpreter {
                 RuleResult.Rejected("more than one action")
             }
 
+            // More than one sentence, more than one command verb, or the same thing named twice is
+            // more than one request, even for one feature ("set the fan to 3; turn the fan off")
+            // (re-audit 4, #1).
+            SENTENCE_BREAK.containsMatchIn(raw.replace(ABBREVIATED_AC, "ac")) -> {
+                RuleResult.Rejected("more than one action")
+            }
+
+            COMMAND_VERB.findAll(t).count() > 1 -> {
+                RuleResult.Rejected("more than one action")
+            }
+
+            REPEATABLE
+                .findAll(t)
+                .map { it.value }
+                .groupingBy { it }
+                .eachCount()
+                .any { it.value > 1 } -> {
+                RuleResult.Rejected("more than one action")
+            }
+
             // One target, one direction, one number: a second request must never vanish silently, and
             // a number must never be truncated to a valid one (pre-review F1, F2, F4).
             targets(t) > 1 -> {
@@ -312,6 +332,10 @@ class RuleInterpreter {
         val COOLER_WORD = Regex("""\b(cooler|colder|cool|down|lower|decrease)\b""")
         val TEMP_TARGET = Regex("""\b(temperature|thermostat|heat|heating|heater|degrees?|warmer|hotter|cooler|colder|warm)\b""")
         val FAN_TARGET = Regex("""\bfan\b""")
+        val SENTENCE_BREAK = Regex("""[;]|[.!?](?=\s*\S)""")
+        val ABBREVIATED_AC = Regex("""(?i)\ba\.\s?c\.?""")
+        val COMMAND_VERB = Regex("""\b(set|turn|switch|make|put|change|raise|lower|increase|decrease|keep|get)\b""")
+        val REPEATABLE = Regex("""\b(fan|defrost|ac|temperature|heat|on|off|up|down|warmer|cooler)\b""")
         val FRONT = Regex("""\bfront\b|(?<!rear |back )\bwindshield\b""")
         val REAR = Regex("""\b(rear|back)\b""")
         val TEMP_UNIT = Regex("""\b(degrees?|celsius)\b""")

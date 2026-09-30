@@ -19,27 +19,30 @@ if [[ -z "${ANDROID_SERIAL:-}" && "$("$adb" devices | grep -c -w device)" != "1"
   echo "more than one device: set ANDROID_SERIAL to the emulator" >&2; exit 1
 fi
 serial="$("$adb" get-serialno | tr -d '\r')"
-qemu="$("$adb" shell getprop ro.kernel.qemu | tr -d '\r')"
-bootqemu="$("$adb" shell getprop ro.boot.qemu | tr -d '\r')"
-auto="$("$adb" shell pm has-feature android.hardware.type.automotive | tr -d '\r')"
+# Every later command goes to this serial only, so a device plugged in after the checks is never the
+# target (re-audit 4, N5).
+adb=("$adb" -s "$serial")
+qemu="$("${adb[@]}" shell getprop ro.kernel.qemu | tr -d '\r')"
+bootqemu="$("${adb[@]}" shell getprop ro.boot.qemu | tr -d '\r')"
+auto="$("${adb[@]}" shell pm has-feature android.hardware.type.automotive | tr -d '\r')"
 if [[ "$serial" != emulator-* || ( "$qemu" != "1" && "$bootqemu" != "1" ) ]]; then
   echo "refusing: $serial is not an Android emulator" >&2; exit 1
 fi
 [[ "$auto" == "true" ]] || { echo "refusing: $serial is not an Android Automotive image" >&2; exit 1; }
 
-"$adb" root >/dev/null && sleep 1
-"$adb" remount
+"${adb[@]}" root >/dev/null && sleep 1
+"${adb[@]}" remount
 if [[ "${1:-}" == "--undo" ]]; then
-  "$adb" shell rm -rf "$dir" "$perm"
+  "${adb[@]}" shell rm -rf "$dir" "$perm"
 else
   [[ -f "$apk" ]] || { echo "build first: ./gradlew :app:assembleDebug" >&2; exit 1; }
-  "$adb" uninstall "$pkg" >/dev/null 2>&1 || true
-  "$adb" shell mkdir -p "$dir"
-  "$adb" push "$apk" "$dir/Earshot.apk"
-  "$adb" push "$root/automotive/privapp-permissions-earshot.xml" "$perm"
-  "$adb" shell chmod 644 "$dir/Earshot.apk" "$perm"
+  "${adb[@]}" uninstall "$pkg" >/dev/null 2>&1 || true
+  "${adb[@]}" shell mkdir -p "$dir"
+  "${adb[@]}" push "$apk" "$dir/Earshot.apk"
+  "${adb[@]}" push "$root/automotive/privapp-permissions-earshot.xml" "$perm"
+  "${adb[@]}" shell chmod 644 "$dir/Earshot.apk" "$perm"
 fi
-"$adb" reboot
-"$adb" wait-for-device
-until [[ "$("$adb" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; do sleep 3; done
-"$adb" shell dumpsys package "$pkg" | grep -E "codePath|CONTROL_CAR_CLIMATE: granted" || true
+"${adb[@]}" reboot
+"${adb[@]}" wait-for-device
+until [[ "$("${adb[@]}" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; do sleep 3; done
+"${adb[@]}" shell dumpsys package "$pkg" | grep -E "codePath|CONTROL_CAR_CLIMATE: granted" || true

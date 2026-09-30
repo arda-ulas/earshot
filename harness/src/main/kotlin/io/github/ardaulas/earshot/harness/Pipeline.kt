@@ -154,7 +154,8 @@ class Pipeline(
                     confidence = confidence,
                     repromptsSoFar = 0,
                     confirmationPending = false,
-                    frontDefrostOn = frontDefrostOn,
+                    // Core's TurnEngine no longer reads the defrost for fan off: always unknown.
+                    frontDefrostOn = null,
                 ),
             )
         return Decision(verdictName(verdict), ms(System.nanoTime() - t0))

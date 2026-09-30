@@ -40,6 +40,10 @@ object TextNormalizer {
             "ninety" to 90,
         )
 
+    private const val NUMBER_WORDS =
+        "zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|" +
+            "seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety"
+
     /** Stands in for a character the rules do not know; never part of any vocabulary. */
     const val UNKNOWN_SYMBOL = "xsymbolx"
 
@@ -74,8 +78,13 @@ object TextNormalizer {
                 .replace(Regex("""(\d)\s*[.,]\s*(\d)"""), "$1 point $2")
                 // A leading decimal point (".21") or a minus before a spoken number ("-twenty one")
                 // must stay visible too (re-audit 3, #2).
-                .replace(Regex("""(^|[^\d])\.\s*(\d)"""), "$1 point $2")
-                .replace(Regex("""(^|\s)-\s*(?=[a-z])"""), "$1 minus ")
+                .replace(Regex("""(^|[^\d])[.,]\s*(\d)"""), "$1 point $2")
+                // A minus attached to a spoken number ("to-twenty one"), but not the hyphen inside
+                // "twenty-one" (re-audit 4, #2).
+                .replace(
+                    Regex("""(?<!\b(?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety))-\s*(?=(?:$NUMBER_WORDS)\b)"""),
+                    " minus ",
+                ).replace(Regex("""(^|\s)-\s*(?=[a-z])"""), "$1 minus ")
                 .replace(Regex("""(\d)\s*[/:]\s*(\d)"""), "$1 slash $2")
                 .replace('-', ' ')
                 // Ordinary punctuation becomes a space; any other symbol (½, ℉, emoji, other scripts)

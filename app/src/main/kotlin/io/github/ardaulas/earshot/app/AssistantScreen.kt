@@ -265,7 +265,10 @@ private fun DeveloperPanel(
             // instrument for the moving rows of the manual test plan (re-audit 3, N6).
             if (state.uxRestricted == true && state.drivingState != DrivingState.PARKED) {
                 Text("Hidden while driving (platform UX restrictions).", style = MaterialTheme.typography.bodySmall)
-                if (state.clips.isNotEmpty()) ClipPicker(state.clips, enabled = state.phase == Phase.IDLE, onClip = onClip)
+                // Debug builds only; clip numbers, never file names, while restricted (re-audit 4, N6).
+                if (state.clips.isNotEmpty()) {
+                    ClipPicker(state.clips, enabled = state.phase == Phase.IDLE, onClip = onClip, showNames = false)
+                }
                 return@Column
             }
             if (state.carApi) {
@@ -306,7 +309,7 @@ private fun DeveloperPanel(
             val parked = state.drivingState == DrivingState.PARKED
             // Climate values and the last turn (transcript, reply, timings) only while parked (re-audit N6).
             if (parked) ClimateValues(state.climate) else Text("Details hidden while driving", style = MaterialTheme.typography.bodySmall)
-            (state.models as? ModelStatus.Ready)?.let {
+            (state.models as? ModelStatus.Ready)?.takeIf { parked }?.let {
                 Text("Speech model: ${it.speechModel}", style = MaterialTheme.typography.bodySmall)
                 it.lmNote?.let { note -> Text("Language model: $note", style = MaterialTheme.typography.bodySmall) }
             }
@@ -321,13 +324,15 @@ private fun ClipPicker(
     clips: List<String>,
     enabled: Boolean,
     onClip: (String) -> Unit,
+    showNames: Boolean = true,
 ) {
     var index by remember { mutableIntStateOf(0) }
     val clip = clips[index.coerceIn(clips.indices)]
     Text("Test clip (debug builds only)", style = MaterialTheme.typography.labelLarge)
     Row(verticalAlignment = Alignment.CenterVertically) {
         TextButton(onClick = { index = (index - 1 + clips.size) % clips.size }) { Text("◀") }
-        Text(clip, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+        val label = if (showNames) clip else "clip ${index.coerceIn(clips.indices) + 1} of ${clips.size}"
+        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
         TextButton(onClick = { index = (index + 1) % clips.size }) { Text("▶") }
     }
     OutlinedButton(onClick = { onClip(clip) }, enabled = enabled) { Text("Play clip") }

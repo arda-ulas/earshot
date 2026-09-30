@@ -27,7 +27,7 @@ class CliTest {
         report.host.threads shouldBe null
         val md = Files.readString(reportDir.resolve("report.md"))
         md shouldContain
-            "| reference | none | text | 10 | 0.0% | 100.0% | 100.0% | 30/30 of 30 (30, 0, 0) | 0/30 | 7 | 0 (0) | 0 | 0 | 0, 0 |"
+            "| reference | none | text | 10 | 0.0% | 100.0% | 100.0% | 30/30 of 30 (30, 0, 0) | 0/30 | 5 | 0 (0) | 0 | 0 | 0, 0 |"
         md shouldContain "Measured on ${report.host.short()}"
         report.labelsSha256.length shouldBe 64
         report.werNormaliser shouldBe WerNormaliser.ID

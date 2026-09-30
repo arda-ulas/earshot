@@ -51,7 +51,7 @@ class RunnerTest {
         g.turnEngineMismatches shouldBe 0
         g.confusion shouldBe emptyList()
         // Core's TurnEngine wrote exactly where a label allows a write command.
-        g.writes shouldBe 7
+        g.writes shouldBe 5
     }
 
     @Test

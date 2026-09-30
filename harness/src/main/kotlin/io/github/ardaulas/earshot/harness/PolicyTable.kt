@@ -35,8 +35,9 @@ object PolicyTable {
         when (command) {
             is Command.SetTemp, is Command.AdjustTemp, is Command.SetAc -> Row.COMFORT
 
-            // Fan off stops the windshield clearing when the front defrost is on or unknown.
-            is Command.SetFan -> if (command.level == 0 && frontDefrostOn != false) Row.VISIBILITY_REDUCING else Row.COMFORT
+            // Fan off can stop the windshield clearing. Core's turn engine does not read the defrost
+            // (a reading can go stale before the write), so fan off always counts as visibility-reducing.
+            is Command.SetFan -> if (command.level == 0) Row.VISIBILITY_REDUCING else Row.COMFORT
 
             is Command.SetDefrost -> if (command.on) Row.COMFORT else Row.VISIBILITY_REDUCING
 

@@ -34,9 +34,9 @@ thresholds:
   max_wer_rise_points: 3
 ```
 
-`context.front_defrost` matters for one command only: the policy counts "fan off" as
-visibility-reducing when the front defrost is on or unknown. Left out, it is `unknown`, the same
-fail-safe the app uses when it cannot read the property. The car suite states `unknown`, which the
+`context.front_defrost` is kept for older suites but no longer changes a decision: core's turn engine
+does not read the front defrost (a reading can change before the write) and always judges "fan off" as
+if it were on, so the harness passes `unknown` to the policy whatever the suite states. The car suite states `unknown`, which the
 policy handles as on, so "turn the fan off" needs a spoken yes while moving. The harness's own test
 fixture uses `off`, so both branches are exercised.
 

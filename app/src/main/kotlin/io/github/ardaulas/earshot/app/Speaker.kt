@@ -86,22 +86,34 @@ class Speaker(
         if (_available.value != true) return false
         val id = UUID.randomUUID().toString()
         return suspendCancellableCoroutine { cont ->
-            waiting[id] = { ok -> if (cont.isActive) cont.resume(ok) }
+            // Registering the waiter and starting the utterance happen under the same lock as stop(),
+            // so a stop can never answer this waiter and then let its utterance start (re-audit 4,
+            // N14). A stop that comes first finds nothing to stop; the caller's guard, which keeps
+            // stopping parked-only speech while the car is not parked, stops the utterance next.
+            val started =
+                synchronized(lock) {
+                    waiting[id] = { ok -> if (cont.isActive) cont.resume(ok) }
+                    tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id) == TextToSpeech.SUCCESS
+                }
             cont.invokeOnCancellation {
                 waiting.remove(id)
-                tts.stop()
+                synchronized(lock) { runCatching { tts.stop() } }
             }
-            if (tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id) != TextToSpeech.SUCCESS) {
+            if (!started) {
                 waiting.remove(id)
-                cont.resume(false)
+                if (cont.isActive) cont.resume(false)
             }
         }
     }
 
+    private val lock = Any()
+
     /** Stops the current utterance; its speak() call returns false. */
     fun stop() {
-        runCatching { tts.stop() }
-        waiting.keys.toList().forEach { id -> waiting.remove(id)?.invoke(false) }
+        synchronized(lock) {
+            runCatching { tts.stop() }
+            waiting.keys.toList().forEach { id -> waiting.remove(id)?.invoke(false) }
+        }
     }
 
     fun shutdown() = tts.shutdown()

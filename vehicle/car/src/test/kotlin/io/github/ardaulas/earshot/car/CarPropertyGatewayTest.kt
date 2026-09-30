@@ -41,7 +41,7 @@ class CarPropertyGatewayTest {
         while (nowMs <= end) {
             car.nowNanos = nowMs * 1_000_000
             gw.poll()
-            resolver.update(gw.latestSignals())
+            resolver.update(gw.latestSignals(), nowMs)
             nowMs += 200
         }
         return resolver.current(nowMs - 200)
@@ -105,9 +105,9 @@ class CarPropertyGatewayTest {
             drive(0f, CarIds.GEAR_PARK)
             gw.poll()
             val resolver = DrivingStateResolver()
-            resolver.update(gw.latestSignals())
+            resolver.update(gw.latestSignals(), nowMs)
             nowMs += 1_600
-            resolver.update(gw.latestSignals())
+            resolver.update(gw.latestSignals(), nowMs)
             resolver.current(nowMs) shouldBe DrivingState.UNKNOWN
         }
 

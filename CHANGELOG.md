@@ -30,6 +30,18 @@ test clips unless stated otherwise. Nothing here has run in a vehicle.
     only once spoken to the end (no screen-only delivery); parked-only speech is stopped on every
     check while moving; the developer view is hidden under the platform's UX restrictions except for
     the debug build's clip player; privileged climate writes need the emulator's virtual hardware.
+  - More than one sentence, command verb or mention of the same feature is refused ("set the fan to
+    3; turn the fan off"); a minus joined to a spoken number and a leading comma are kept; only
+    whisper's known non-speech tags are removed from a transcript, so bracketed words such as "(no,
+    cancel that)" still reach the rules.
+  - Fan off while moving always asks for a yes: the front defrost is no longer read for it, since a
+    reading can change before the write. A write whose wait timed out does not start later.
+  - The driving-state resolver drops readings stamped in the future instead of storing them; model
+    snapshots are serialised and verified before they are published; debug clips longer than 8 s
+    are refused whole; speech and its stop are serialised, so a stop can no longer let parked-only
+    speech play on; a gap in the captured audio refuses the utterance.
+  - The privileged installer sends every command to the emulator it checked; the manifest check
+    refuses a non-literal `android:exported`.
   - Traces: a hard 1 MB per file, expired files deleted at start-up as well, and a turn that could
     not be stored says so.
   - A zero speed with no gear reading is unknown, not parked; a relative change from a temperature

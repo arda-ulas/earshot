@@ -271,8 +271,10 @@ class TurnEngine(
             delivered != null &&
                 utteranceStartMs >= delivered &&
                 utteranceEndMs <= delivered + config.confirmationTtlMs
-        val frontDefrostOn =
-            if (command is Command.SetFan) readBool(ClimateProperty.FRONT_DEFROST) else null
+        // The front defrost is not read: a reading can go stale before the write, so fan off is always
+        // judged as if the defrost were on (the policy's fail-safe for unknown), and asks for a yes
+        // while moving (re-audit 4, N20).
+        val frontDefrostOn: Boolean? = null
         val verdict =
             turn.stage("policy") {
                 policy.decide(
@@ -385,7 +387,7 @@ class TurnEngine(
      * what was already granted stops it. Returns the driving state the write was allowed in, or null.
      */
     private suspend fun stillAllowed(a: Act): DrivingState? {
-        val frontDefrostOn = if (a.command is Command.SetFan) readBool(ClimateProperty.FRONT_DEFROST) else null
+        val frontDefrostOn: Boolean? = null
         // Sampled after the last read, so nothing suspends between this and the write (audit re-check #7).
         val now = drivingState()
         val recheck = policy.decide(PolicyInput(a.command, a.source, now, 1f, 0, false, frontDefrostOn))
@@ -516,8 +518,17 @@ class TurnEngine(
         // behind a slow car call must not start after the turn was cancelled or the state changed
         // (re-audit 3, N12 and #7).
         val job = currentCoroutineContext()[Job]
-        val guard = { job?.isActive != false && drivingState() == allowedIn }
-        val result = withTimeoutOrNull(config.writeTimeoutMs) { vehicle.write(property, value, a.deadlineMs, guard) }
+        // Set when this turn stops waiting: a write still queued then must not start (re-audit 4, N12).
+        val abandoned =
+            java.util.concurrent.atomic
+                .AtomicBoolean(false)
+        val guard = { !abandoned.get() && job?.isActive != false && drivingState() == allowedIn }
+        val result =
+            try {
+                withTimeoutOrNull(config.writeTimeoutMs) { vehicle.write(property, value, a.deadlineMs, guard) }
+            } finally {
+                abandoned.set(true)
+            }
         if (result == null) {
             // The wait stopped, but the write may still complete: never claim it failed (pre-review F7).
             turn.writeResult = WriteResult.TimedOut

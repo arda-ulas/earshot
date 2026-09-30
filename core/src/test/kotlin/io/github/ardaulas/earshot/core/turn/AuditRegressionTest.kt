@@ -224,25 +224,25 @@ class AuditRegressionTest {
     @Verifies("SR-6")
     fun `audit 6 - negative, NaN, infinite, future and gapped signals never resolve to parked`() {
         fun resolver() = DrivingStateResolver(staleAfterMs = 1_000, parkedAfterMs = 2_000)
-        resolver().apply { update(SignalSample(-5.0, Gear.PARK, 0)) }.current(0) shouldBe DrivingState.UNKNOWN
-        resolver().apply { update(SignalSample(Double.NaN, Gear.PARK, 0)) }.current(0) shouldBe DrivingState.UNKNOWN
-        resolver().apply { update(SignalSample(Double.POSITIVE_INFINITY, Gear.NEUTRAL, 0)) }.current(0) shouldBe DrivingState.UNKNOWN
-        resolver().apply { update(SignalSample(0.0, Gear.PARK, 5_000)) }.current(0) shouldBe DrivingState.UNKNOWN
+        resolver().apply { update(SignalSample(-5.0, Gear.PARK, 0), 0) }.current(0) shouldBe DrivingState.UNKNOWN
+        resolver().apply { update(SignalSample(Double.NaN, Gear.PARK, 0), 0) }.current(0) shouldBe DrivingState.UNKNOWN
+        resolver().apply { update(SignalSample(Double.POSITIVE_INFINITY, Gear.NEUTRAL, 0), 0) }.current(0) shouldBe DrivingState.UNKNOWN
+        resolver().apply { update(SignalSample(0.0, Gear.PARK, 5_000), 5_000) }.current(0) shouldBe DrivingState.UNKNOWN
         // Negative speed in neutral for a long time: never parked.
-        resolver().apply { for (t in 0L..5_000L step 200) update(SignalSample(-1.0, Gear.NEUTRAL, t)) }.current(5_000) shouldBe
+        resolver().apply { for (t in 0L..5_000L step 200) update(SignalSample(-1.0, Gear.NEUTRAL, t), t) }.current(5_000) shouldBe
             DrivingState.UNKNOWN
         // Zero at 0 s, a 10 s gap, zero again: not "continuously" stopped.
         resolver()
             .apply {
-                update(SignalSample(0.0, Gear.NEUTRAL, 0))
-                update(SignalSample(0.0, Gear.NEUTRAL, 10_000))
+                update(SignalSample(0.0, Gear.NEUTRAL, 0), 0)
+                update(SignalSample(0.0, Gear.NEUTRAL, 10_000), 10_000)
             }.current(10_000) shouldBe DrivingState.MOVING
         // A NaN in the middle resets the stationary history.
         resolver()
             .apply {
-                for (t in 0L..1_800L step 200) update(SignalSample(0.0, Gear.NEUTRAL, t))
-                update(SignalSample(Double.NaN, Gear.NEUTRAL, 2_000))
-                update(SignalSample(0.0, Gear.NEUTRAL, 2_200))
+                for (t in 0L..1_800L step 200) update(SignalSample(0.0, Gear.NEUTRAL, t), t)
+                update(SignalSample(Double.NaN, Gear.NEUTRAL, 2_000), 2_000)
+                update(SignalSample(0.0, Gear.NEUTRAL, 2_200), 2_200)
             }.current(2_200) shouldBe DrivingState.MOVING
     }
 
@@ -255,12 +255,14 @@ class AuditRegressionTest {
             val r = rig(DrivingState.PARKED)
             r.vehicle.write(ClimateProperty.FRONT_DEFROST, 1)
             val before = r.vehicle.writeCount
-            // The defrost read the policy needs is slow; the car pulls away during it.
-            r.vehicle.onRead = { r.state = DrivingState.MOVING }
-            r.vehicle.readDelayMs = 300
+            // The car pulls away between the decision and the write: the gateway's guard stops it.
+            val fanBefore = (r.vehicle.read(ClimateProperty.FAN_LEVEL) as ReadResult.Value).value
+            r.vehicle.onWrite = { r.state = DrivingState.MOVING }
             val result = r.say("fan off")
             result.outcome shouldBe Outcome.DISCARDED_STATE_CHANGED
-            r.vehicle.writeCount shouldBe before
+            r.vehicle.writeCount shouldBe before + 1
+            r.vehicle.onWrite = null
+            (r.vehicle.read(ClimateProperty.FAN_LEVEL) as ReadResult.Value).value shouldBe fanBefore
         }
 
     @Test
@@ -363,23 +365,44 @@ class AuditRegressionTest {
 
     @Test
     @Verifies("SR-8")
-    fun `re-audit 7 - the car moving during the re-check read still stops fan off`() =
+    fun `re-audit 7 - the car moving just before the write still stops fan off`() =
         runTest {
             val r = rig(DrivingState.PARKED)
             r.vehicle.write(ClimateProperty.FRONT_DEFROST, 1)
             val before = r.vehicle.writeCount
-            var reads = 0
-            // Parked during the first defrost read (policy), moving from the second (re-check) on.
-            r.vehicle.onRead = { if (++reads >= 2) r.state = DrivingState.MOVING }
+            r.vehicle.onWrite = { r.state = DrivingState.MOVING }
             r.say("fan off").outcome shouldBe Outcome.DISCARDED_STATE_CHANGED
-            r.vehicle.writeCount shouldBe before
+            r.vehicle.writeCount shouldBe before + 1
         }
+
+    @Test
+    @Verifies("SR-8")
+    fun `re-audit 4 N20 - fan off while moving always asks, whatever the defrost reading`() =
+        runTest {
+            val r = rig(DrivingState.MOVING)
+            r.vehicle.write(ClimateProperty.FRONT_DEFROST, 0)
+            r.say("fan off").outcome shouldBe Outcome.CONFIRMATION_REQUESTED
+        }
+
+    @Test
+    @Verifies("SR-2")
+    fun `re-audit 4 N18 - words in brackets are kept, only known non-speech tags go`() {
+        io.github.ardaulas.earshot.core.speech.AudioGate
+            .clean("Turn off the defrost. (No, cancel that.)") shouldBe "Turn off the defrost. No, cancel that."
+        RuleInterpreter()
+            .interpret(
+                io.github.ardaulas.earshot.core.speech.AudioGate
+                    .clean("Turn off the defrost. (No, cancel that.)"),
+            ).shouldBeInstanceOf<RuleResult.Rejected>()
+        io.github.ardaulas.earshot.core.speech.AudioGate
+            .clean("(don't) make it warmer") shouldBe "don't make it warmer"
+    }
 
     @Test
     @Verifies("SR-6")
     fun `re-audit N1 - a park gear without a readable speed is not parked`() {
-        DrivingStateResolver().apply { update(SignalSample(null, Gear.PARK, 0)) }.current(0) shouldBe DrivingState.UNKNOWN
-        DrivingStateResolver().apply { update(SignalSample(0.0, Gear.PARK, 0)) }.current(0) shouldBe DrivingState.PARKED
+        DrivingStateResolver().apply { update(SignalSample(null, Gear.PARK, 0), 0) }.current(0) shouldBe DrivingState.UNKNOWN
+        DrivingStateResolver().apply { update(SignalSample(0.0, Gear.PARK, 0), 0) }.current(0) shouldBe DrivingState.PARKED
     }
 
     // --- Pre-review of round 2 (2026-09-30) ---------------------------------------------------
@@ -462,7 +485,7 @@ class AuditRegressionTest {
     @Verifies("SR-6", "SR-22")
     fun `pre-review F5 - zero speed with no gear reading is never parked`() {
         val resolver = DrivingStateResolver()
-        for (t in 0L..3_000L step 200) resolver.update(SignalSample(0.0, null, t))
+        for (t in 0L..3_000L step 200) resolver.update(SignalSample(0.0, null, t), t)
         resolver.current(3_000) shouldBe DrivingState.UNKNOWN
     }
 
@@ -533,5 +556,34 @@ class AuditRegressionTest {
         rules.interpret("defrost the rear windshield") shouldBe
             RuleResult.Matched(Command.SetDefrost(io.github.ardaulas.earshot.core.command.Window.REAR, true))
         rules.interpret("set the temperature to 21 degrees celsius") shouldBe RuleResult.Matched(Command.SetTemp(21))
+    }
+
+    @Test
+    @Verifies("SR-1", "SR-3")
+    fun `re-audit 4 1 and 2 - one feature asked twice, extra sentences, a joined minus or a leading comma never act`() {
+        val rules = RuleInterpreter()
+        for (text in listOf(
+            "Set the fan to 3; turn the fan off",
+            "Set the fan to 3. Turn the fan off.",
+            "Turn off the defrost. No, cancel that.",
+            "set the fan to 3 set the fan to 1",
+            "fan up fan down",
+        )) {
+            (rules.interpret(text) is RuleResult.Matched) shouldBe false
+        }
+        for (text in listOf("Set temperature to\u2212twenty one", "Set temperature to ,21", "set temperature to-twenty one")) {
+            rules.interpret(text) shouldBe RuleResult.OutOfRange("temperature", Bounds.TEMP_C)
+        }
+        rules.interpret("Set the temperature to twenty-one.") shouldBe RuleResult.Matched(Command.SetTemp(21))
+        rules.interpret("Turn on the A.C. please") shouldBe RuleResult.Matched(Command.SetAc(true))
+    }
+
+    @Test
+    @Verifies("SR-6")
+    fun `re-audit 4 6 - a future reading is dropped, so later valid readings still count`() {
+        val resolver = DrivingStateResolver()
+        resolver.update(SignalSample(0.0, Gear.PARK, 5_000), nowMs = 0)
+        for (t in 1_000L..4_800L step 200) resolver.update(SignalSample(30.0, Gear.DRIVE, t), nowMs = t)
+        resolver.current(5_000) shouldBe DrivingState.MOVING
     }
 }

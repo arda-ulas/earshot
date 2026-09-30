@@ -135,7 +135,7 @@ Precedence in the policy, first match wins:
 | Comfort | set or adjust temperature, AC on or off, defrost on, fan (except the case below) | Allow | AllowVoiceOnly |
 | Query | speed, gear, cabin settings | Allow | AllowVoiceOnly |
 | Conversation | help, yes or no with a confirmation pending | Allow | AllowVoiceOnly |
-| Visibility-reducing | defrost off; fan off while the front defrost is on or unreadable | Allow | Confirm |
+| Visibility-reducing | defrost off; fan off (the turn engine treats the front defrost as on: it does not read it, since a reading can change before the write) | Allow | Confirm |
 | Screen-dependent | show the climate panel | Allow | Refuse, with a short spoken summary |
 | Out of domain | anything else | Refuse | Refuse |
 
@@ -375,26 +375,29 @@ parked. [10]
   are implemented in `:app` and reviewed, but no automated test drives `AudioRecord`, text-to-speech
   or the view-model lifecycle. Cancellation during model loading can still leave a loaded engine
   unowned until the process ends (re-audit finding N9, not fixed).
-- **Debug clip player while driving.** Debug builds keep the clip player (clip file names and a
-  play button) visible under the platform's UX restrictions, as the test instrument for the moving
-  rows of the manual test plan. Release builds have no clip player.
+- **Debug clip player while driving.** Debug builds keep the clip player (a clip number, arrows and a
+  play button, no file names) under the platform's UX restrictions, as the test instrument for the
+  moving rows of the manual test plan. Release builds have no clip player.
 - **The single path to the vehicle is kept by review.** Today the main (non-test) sources have one
   call to `VehicleGateway.write`, in `TurnEngine`. No automated check enforces that.
 - **Simulated vehicle and emulator HAL.** On the phone, driving signals come from scripted scenarios.
   On the Android Automotive emulator they come from its vehicle HAL, set with test hooks. The value
   bounds are those of the simulated cabin; the emulator's fan range is not mapped to the 0-5 model.
 - **Car-service calls cannot be interrupted.** Timeouts stop waiting for a platform call, but a call
-  that has started runs to its end, so a timed-out write may still take effect (a write that has not
-  started yet checks the turn and the driving state first and does nothing if either changed); the reply says the
+  that has started runs to its end, so a timed-out write may still take effect. A write that has not
+  started yet checks first that the turn is still waiting for it and that the driving state is
+  unchanged, and does nothing otherwise; the reply says the
   change could not be confirmed. Driving signals are polled off the main thread; if polling stalls,
   the state ages to unknown, and a separate loop with no car calls removes parked-only output. The
   car connection and area discovery still run once on the main thread when the screen is created.
 - **How fresh "right before the write" is.** The re-check, and the gateway's guard just before the
-  first effect, use the resolver's latest reading, not a new one. That reading is at most 1 s old;
-  on the car API it is stamped with the time the poll started, and its speed value may be up to 2 s
-  older by the vehicle's own timestamp (a value stamped in the future is refused). The gear value
-  carries no age check of its own. The state used is therefore up to about 3 s old, not
-  instantaneous.
+  first effect, use the resolver's latest reading, not a new one. That reading is at most 1 s old; on
+  the car API it is stamped with the time the poll started, and its speed value may be up to 2 s older
+  by the vehicle's own timestamp (a value stamped in the future is refused). The gear value has no
+  age check: it is an on-change property, whose timestamp is when the gear last changed, so an old
+  timestamp is normal and a stale value cannot be told apart. Parked needs park and a fresh zero
+  speed, so a stale park value with a moving car still reads as moving; a stale park value with a car
+  stopped in drive would read as parked.
 - **Late re-prompts under host load.** whisper.cpp checks its abort flag only after the encoder
   finishes and after each decoder step, not during the encoder. On the arm64 API 36 emulator, with
   the Apple silicon laptop heavily loaded (load average about 20), an aborted speech-to-text call

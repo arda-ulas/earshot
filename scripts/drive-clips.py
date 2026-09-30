@@ -69,11 +69,30 @@ def controls():
     raise SystemExit("clip controls not found (debug build with clips pushed?)")
 
 
+NUMBERED = re.compile(r"^clip (\d+) of (\d+)$")
+
+
+def current(xml, names):
+    """Index of the selected clip: its name, or "clip N of M" under the platform's UX restrictions."""
+    for t, en, x, y in nodes(xml):
+        if t.endswith(".wav"):
+            return names.index(t)
+        m = NUMBERED.match(t)
+        if m:
+            return int(m.group(1)) - 1
+    raise SystemExit("no clip selector on screen")
+
+
+def shows(clip, xml):
+    names = clips()
+    return find(clip, xml) is not None or find(f"clip {names.index(clip) + 1} of {len(names)}", xml) is not None
+
+
 def select(clip, xml):
     names = clips()
-    cur = next(t for t, en, x, y in nodes(xml) if t.endswith(".wav"))
+    cur = current(xml, names)
     nxt = find("▶", xml)
-    for _ in range((names.index(clip) - names.index(cur)) % len(names)):
+    for _ in range((names.index(clip) - cur) % len(names)):
         tap(nxt[0], nxt[1])
         time.sleep(0.12)
 
@@ -110,7 +129,7 @@ def play(clip, answer=None):
     xml = controls()
     select(clip, xml)
     xml, btn = wait_enabled("Play clip")
-    if not find(clip, xml):
+    if not shows(clip, xml):
         raise SystemExit(f"could not select {clip}")
     before = last_trace()
     tap(btn[0], btn[1])
@@ -125,7 +144,7 @@ def play(clip, answer=None):
     if answer:
         for _ in range(3):
             xml, btn = wait_enabled("Play clip")
-            if find(answer, xml):
+            if shows(answer, xml):
                 break
             select(answer, xml)
         else:

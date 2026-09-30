@@ -52,7 +52,11 @@ def problems(path):
             # its name is not exempt (re-audit 3, N15).
             if tag == "activity" and name == LAUNCHER and is_launcher(e):
                 continue
-            if exported == "true" or (has_filter and exported != "false"):
+            # Only the literal values are understood; a resource reference or anything else could
+            # resolve to true, so it fails (re-audit 4, N21).
+            if exported not in (None, "true", "false"):
+                out.append(f"non-literal android:exported on {tag} {name}")
+            elif exported == "true" or (has_filter and exported != "false"):
                 out.append(f"exports {tag} {name}")
     return out
 

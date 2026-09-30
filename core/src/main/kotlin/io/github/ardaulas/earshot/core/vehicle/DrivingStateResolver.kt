@@ -28,8 +28,15 @@ class DrivingStateResolver(
     private var latestValid = false
     private var zeroSinceMs: Long? = null
 
-    fun update(sample: SignalSample?) {
-        if (sample == null) return
+    /**
+     * Takes one reading. A reading stamped after [nowMs] is dropped, not stored: kept, it would block
+     * every later valid reading until the clock caught up with it (re-audit 4, #6).
+     */
+    fun update(
+        sample: SignalSample?,
+        nowMs: Long,
+    ) {
+        if (sample == null || sample.atMs > nowMs) return
         val previous = latest
         // Readings that go back in time are ignored; they cannot extend or restart anything.
         if (previous != null && sample.atMs < previous.atMs) return

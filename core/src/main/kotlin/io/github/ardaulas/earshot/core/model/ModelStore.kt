@@ -7,10 +7,13 @@ import java.io.IOException
  * Keeps a verified copy of each model in app-private storage and hands out only that copy.
  *
  * 1. If the private copy exists and verifies, use it.
- * 2. Otherwise verify the shared copy, copy it to a temporary private file, move it into place, and
- *    verify the private file again. Use it only if that second check passes.
+ * 2. Otherwise verify the shared copy, copy it to a new temporary private file, verify that file,
+ *    and only then move it into place. A copy that fails its check is deleted, never published.
+ *
+ * Snapshots are serialised, so two callers can never publish over each other (re-audit 4, N17).
  */
 object ModelStore {
+    @Synchronized
     fun snapshot(
         spec: ModelSpec,
         sharedDir: File,
@@ -22,17 +25,23 @@ object ModelStore {
         val shared = File(sharedDir, spec.file)
         val sharedCheck = verify(spec, shared)
         if (!sharedCheck.isOk) return private to sharedCheck
+        var tmp: File? = null
         return try {
             privateDir.mkdirs()
-            val tmp = File(privateDir, spec.file + ".part")
-            shared.copyTo(tmp, overwrite = true)
-            if (!tmp.renameTo(private)) {
+            val part = File.createTempFile(spec.file, ".part", privateDir)
+            tmp = part
+            shared.copyTo(part, overwrite = true)
+            val check = verify(spec, part)
+            if (!check.isOk) return private to check
+            if (!part.renameTo(private)) {
                 private.delete()
-                if (!tmp.renameTo(private)) throw IOException("rename failed")
+                if (!part.renameTo(private)) throw IOException("rename failed")
             }
-            private to verify(spec, private)
+            private to ModelCheck.Ok
         } catch (e: IOException) {
             private to ModelCheck.Unreadable(e.javaClass.simpleName)
+        } finally {
+            tmp?.takeIf { it.exists() }?.delete()
         }
     }
 }
