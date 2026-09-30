@@ -6,7 +6,7 @@ launcher activity (SR-20).
 
 | Permission | Why | Notes |
 |---|---|---|
-| `io.github.ardaulas.earshot.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | Added by AndroidX `core` for receivers registered as not exported | A signature permission defined by the app for itself; no other app can hold it; grants nothing to the app |
+| `io.github.ardaulas.earshot.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | Added by AndroidX `core` for receivers registered as not exported | A signature permission defined by the app for itself; only apps signed with the same key can hold it; grants nothing to the app |
 | `RECORD_AUDIO` | Push-to-talk speech capture | Requested at the first press. Capture runs only while the button (or the push-to-talk key) is held. Audio is kept in memory for one turn and never written to storage |
 | `android.car.permission.CAR_SPEED` | Android Automotive only: read `PERF_VEHICLE_SPEED` for the driving state | Dangerous: requested at start-up on an automotive device. Without it only the gear is read, and the driving state falls back to the gear rules. Unused on a phone |
 | `android.car.permission.CAR_POWERTRAIN` | Android Automotive only: read `GEAR_SELECTION` / `CURRENT_GEAR` | Normal: granted at install. Unused on a phone |

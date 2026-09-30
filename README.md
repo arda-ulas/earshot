@@ -233,8 +233,8 @@ What the code does:
 - Unknown or stale driving state is handled as moving, and so is drive or reverse at a standstill.
 - While moving or unknown: no assistant output on screen, replies of at most 12 words, and a spoken
   yes for visibility-reducing commands (defrost off; fan off while the front defrost is on or
-  unknown). Status text, the developer view and the debug recording caption still show, and a
-  result shown while parked stays until the next turn (see [docs/safety.md](docs/safety.md)).
+  unknown). Status text, the developer view and the debug recording caption still show; a result
+  shown while parked is removed when the car starts moving (see [docs/safety.md](docs/safety.md)).
 - Confidence below 0.5 or unknown: ask once to repeat, then stop. One write per turn, 1 s timeout,
   no retry; the reply comes from reading the value back. An action that cannot start within 5 s of
   the end of the utterance is discarded.

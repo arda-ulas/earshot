@@ -286,7 +286,7 @@ guidelines for built-in, visual-manual interfaces in light vehicles. [8] [9]
 Earshot does not measure glances and has not been tested with either NHTSA protocol. Its own rule is
 simpler: a turn decided while moving or unknown puts nothing on screen, and screen-dependent requests
 are refused by voice. The single screen is not blank while moving. Status text and the developer
-panel still show, and a result shown while parked stays until the next turn (see Known gaps).
+panel still show; a result shown while parked is removed when the car starts moving (see Known gaps).
 Its choice to treat drive or reverse at a standstill as moving points the same way as NHTSA's
 definition of driving, although Earshot has no propulsion signal. Its neutral-at-standstill rule
 (parked after 2 s) is looser than NHTSA's definition.
@@ -357,9 +357,9 @@ the Android Automotive emulator.
   manual test plan, on clips.
 - **The screen rule covers assistant output only.** SR-4 applies to the result content of a turn. The
   single screen still shows status text while moving, such as "Voice only while driving" and "Waiting
-  for yes or no". A result shown while parked (text or the climate panel) stays on screen after the
-  vehicle starts moving, until the next turn finishes; nothing clears it on a change of driving
-  state. The developer panel, a test tool for the simulated vehicle, shows the last transcript and
+  for yes or no". Since v0.3.0 a result shown while parked (text or the climate panel) is removed
+  when the driving state stops being parked, and a long parked reply is stopped (app behaviour,
+  checked on the emulator, not unit-tested). The developer panel, a test tool for the simulated vehicle, shows the last transcript and
   reply in every driving state. The debug build's recording caption shows the clip's scripted text
   and the reply in every driving state. Android Automotive's `UX_RESTRICTIONS_NO_VOICE_TRANSCRIPTION`
   flag forbids showing voice transcriptions while restricted. [12] The panel would need to respect it
