@@ -52,12 +52,19 @@ class RuleInterpreter {
         val actions = listOfNotNull(temperature(t), fan(t), defrost(t), ac(t))
         if (actions.isEmpty()) {
             return when {
-                // A negated sentence never reaches the language model, domain word or not ("I'm not cold").
-                NEGATION.containsMatchIn(t) -> RuleResult.Rejected("negated")
+                // A feature Earshot cannot control is refused before the language model is asked
+                // ("open the sunroof"). Windows stay open to it: "I can't see out the back window" is a
+                // defrost request.
+                UNSUPPORTED_TARGET.findAll(t).any { it.value !in setOf("window", "windows") } -> RuleResult.Rejected("unsupported target")
 
+                // Negation is refused here only with a climate word ("don't make it warmer"). Without
+                // one ("I can't see out the windshield") the language model may still pick a command,
+                // which always needs a spoken yes.
                 !domain -> RuleResult.NoMatch
 
                 unsupportedTarget(t) -> RuleResult.Rejected("unsupported target")
+
+                NEGATION.containsMatchIn(t) -> RuleResult.Rejected("negated")
 
                 raw.endsWith("?") || QUESTION.containsMatchIn(t) -> RuleResult.Rejected("question")
 

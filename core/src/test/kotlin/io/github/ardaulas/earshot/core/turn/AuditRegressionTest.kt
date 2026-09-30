@@ -448,11 +448,14 @@ class AuditRegressionTest {
 
     @Test
     @Verifies("SR-1")
-    fun `pre-review F10 - a negated sentence without a climate word does not reach the language model`() =
+    fun `unsupported features are refused before the language model, windows stay open to it`() =
         runTest {
             val r = rig(DrivingState.PARKED)
-            r.say("I'm not freezing").outcome shouldBe Outcome.REFUSED
+            for (text in listOf("Turn on the seat heater", "Open the sunroof", "Lock the doors")) {
+                r.say(text).outcome shouldBe Outcome.REFUSED
+            }
             r.lm.callCount shouldBe 0
+            RuleInterpreter().interpret("I can't see out the back window") shouldBe RuleResult.NoMatch
         }
 
     @Test
@@ -475,4 +478,11 @@ class AuditRegressionTest {
             r.say("make it cooler").outcome shouldBe Outcome.NO_CHANGE
             r.vehicle.writeCount shouldBe 0
         }
+
+    @Test
+    fun `the language model gets the words without trailing punctuation, as it was evaluated`() {
+        val lm = LmInterpreter(FakeLm())
+        lm.forModel("It's really stuffy in here.") shouldBe "It's really stuffy in here"
+        lm.forModel("  I'm  freezing!? ") shouldBe "I'm freezing"
+    }
 }
