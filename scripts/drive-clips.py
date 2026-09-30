@@ -114,19 +114,25 @@ def play(clip, answer=None):
         raise SystemExit(f"could not select {clip}")
     before = last_trace()
     tap(btn[0], btn[1])
+    if answer:
+        # Select the answer while the question turn runs: the answer window is 10 s from the end of the
+        # spoken question, and stepping through the clip list takes longer than that.
+        time.sleep(0.5)
+        select(answer, dump())
     t = wait_new(before)
     report(clip, t)
+    asked = time.time()
     if answer:
         for _ in range(3):
-            xml = dump()
-            select(answer, xml)
             xml, btn = wait_enabled("Play clip")
             if find(answer, xml):
                 break
+            select(answer, xml)
         else:
             raise SystemExit(f"could not select {answer}")
         before = last_trace()
         tap(btn[0], btn[1])
+        print(f"  (answer played {time.time() - asked:.1f} s after the question's trace)", flush=True)
         report(answer, wait_new(before))
     time.sleep(3)
 
