@@ -24,4 +24,5 @@ rootProject.name = "earshot"
 include(":core")
 include(":native:whisper")
 include(":native:llama")
+include(":vehicle:car")
 include(":app")

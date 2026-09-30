@@ -7,6 +7,8 @@ plugins {
 android {
     namespace = "io.github.ardaulas.earshot.app"
     compileSdk = 36
+    // Compile against the car API stub; at run time the library exists only on Android Automotive.
+    useLibrary("android.car")
 
     defaultConfig {
         applicationId = "io.github.ardaulas.earshot"
@@ -122,6 +124,7 @@ dependencies {
     implementation(project(":core"))
     implementation(project(":native:whisper"))
     implementation(project(":native:llama"))
+    implementation(project(":vehicle:car"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

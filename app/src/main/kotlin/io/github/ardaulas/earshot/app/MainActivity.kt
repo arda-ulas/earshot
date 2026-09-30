@@ -23,8 +23,16 @@ class MainActivity : ComponentActivity() {
             if (!granted) viewModel.onPress(hasMicPermission = false)
         }
 
+    private val requestCarSpeed = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // On Android Automotive, vehicle speed is a runtime permission; without it only gear is read.
+        if (packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE) &&
+            ContextCompat.checkSelfPermission(this, CAR_SPEED) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestCarSpeed.launch(CAR_SPEED)
+        }
         enableEdgeToEdge()
         setContent {
             EarshotTheme {
@@ -76,5 +84,6 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         val PTT_KEYS = setOf(KeyEvent.KEYCODE_F2, KeyEvent.KEYCODE_VOICE_ASSIST)
+        const val CAR_SPEED = "android.car.permission.CAR_SPEED"
     }
 }

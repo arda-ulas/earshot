@@ -1,10 +1,15 @@
 package io.github.ardaulas.earshot.app
 
 import android.app.Application
+import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.ardaulas.earshot.car.CarIds
+import io.github.ardaulas.earshot.car.CarPropertyGateway
+import io.github.ardaulas.earshot.car.PlatformCar
 import io.github.ardaulas.earshot.core.interpret.LmInterpreter
 import io.github.ardaulas.earshot.core.interpret.LmWireFormat
 import io.github.ardaulas.earshot.core.interpret.RuleInterpreter
@@ -13,6 +18,7 @@ import io.github.ardaulas.earshot.core.model.ModelGate
 import io.github.ardaulas.earshot.core.model.ModelManifest
 import io.github.ardaulas.earshot.core.policy.DrivingState
 import io.github.ardaulas.earshot.core.policy.Policy
+import io.github.ardaulas.earshot.core.policy.withUxRestrictions
 import io.github.ardaulas.earshot.core.speech.WavReader
 import io.github.ardaulas.earshot.core.time.MonotonicClock
 import io.github.ardaulas.earshot.core.trace.HostInfo
@@ -25,7 +31,9 @@ import io.github.ardaulas.earshot.core.vehicle.ClimateProperty
 import io.github.ardaulas.earshot.core.vehicle.DrivingScenario
 import io.github.ardaulas.earshot.core.vehicle.DrivingStateResolver
 import io.github.ardaulas.earshot.core.vehicle.Gear
+import io.github.ardaulas.earshot.core.vehicle.ReadResult
 import io.github.ardaulas.earshot.core.vehicle.SimulatedVehicleGateway
+import io.github.ardaulas.earshot.core.vehicle.VehicleGateway
 import io.github.ardaulas.earshot.llama.LlamaLmEngine
 import io.github.ardaulas.earshot.whisper.WhisperSpeechEngine
 import kotlinx.coroutines.Dispatchers
@@ -74,17 +82,35 @@ data class UiState(
     val clips: List<String> = emptyList(),
     /** Debug builds only: what the playing clip says, captioned for screen recordings (which have no audio). */
     val clipCaption: String? = null,
+    /** True on an automotive build with the car service: signals come from the car API. */
+    val carApi: Boolean = false,
+    /** True when climate writes reach the car (needs CONTROL_CAR_CLIMATE); false means simulated writes. */
+    val realClimateWrites: Boolean = false,
+    /** The platform's UX restrictions (car only; null on a phone). */
+    val uxRestricted: Boolean? = null,
 )
 
 /**
- * Owns the pipeline for the single screen. The simulated vehicle and the scripted driving scenarios
- * live here; on the automotive emulator they are replaced by the car property API (next phases).
+ * Owns the pipeline for the single screen. On Android Automotive (the automotive feature present and
+ * the car service reachable) speed, gear and UX restrictions come from the car API; climate writes go
+ * to the car only with CONTROL_CAR_CLIMATE, otherwise to the simulated vehicle. Elsewhere (a phone)
+ * everything is simulated, with scripted driving scenarios, exactly as in v0.2.x.
  */
 class AssistantViewModel(
     app: Application,
 ) : AndroidViewModel(app) {
     private val clock = MonotonicClock.System
-    private val vehicle = SimulatedVehicleGateway(clock, DrivingScenario.PARKED)
+    private val simulated = SimulatedVehicleGateway(clock, DrivingScenario.PARKED)
+    private val platformCar: PlatformCar? =
+        if (app.packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE)) PlatformCar.connect(app) else null
+    private val carGateway: CarPropertyGateway? =
+        platformCar?.let { car ->
+            val canWriteClimate =
+                ContextCompat.checkSelfPermission(app, PERMISSION_CONTROL_CAR_CLIMATE) == PackageManager.PERMISSION_GRANTED &&
+                    car.areaIds(CarIds.HVAC_TEMPERATURE_SET).isNotEmpty()
+            CarPropertyGateway(car, clock, realClimate = canWriteClimate, simulatedClimate = simulated)
+        }
+    private val vehicle: VehicleGateway = carGateway ?: simulated
     private val resolver = DrivingStateResolver()
     private val speaker = Speaker(app)
     private val capture = AudioCapture()
@@ -112,6 +138,9 @@ class AssistantViewModel(
         refreshClips()
     }
 
+    /** The platform's UX restrictions: null on a phone, where there is no restrictions service. */
+    private fun uxRestricted(): Boolean? = platformCar?.requiresDistractionOptimization?.value
+
     private suspend fun tickDrivingSignals() {
         while (true) {
             val signals = vehicle.latestSignals()
@@ -119,6 +148,12 @@ class AssistantViewModel(
                 synchronized(resolver) {
                     resolver.update(signals)
                     resolver.current(clock.millis())
+                }.withUxRestrictions(uxRestricted())
+            val climate =
+                if (carGateway?.realClimate == true) {
+                    ClimateProperty.entries.mapNotNull { p -> (vehicle.read(p) as? ReadResult.Value)?.let { p to it.value } }.toMap()
+                } else {
+                    simulated.snapshot()
                 }
             _state.update {
                 it.copy(
@@ -126,8 +161,11 @@ class AssistantViewModel(
                     speedKmh = signals?.speedKmh,
                     gear = signals?.gear,
                     connected = vehicle.isAvailable,
-                    scenario = vehicle.currentScenario.name,
-                    climate = vehicle.snapshot(),
+                    scenario = simulated.currentScenario.name,
+                    climate = climate,
+                    carApi = carGateway != null,
+                    realClimateWrites = carGateway?.realClimate == true,
+                    uxRestricted = uxRestricted(),
                     awaitingConfirmation = engine?.isAwaitingConfirmation ?: false,
                 )
             }
@@ -139,7 +177,7 @@ class AssistantViewModel(
         synchronized(resolver) {
             resolver.update(vehicle.latestSignals())
             resolver.current(clock.millis())
-        }
+        }.withUxRestrictions(uxRestricted())
 
     private suspend fun loadModels() {
         val app = getApplication<Application>()
@@ -291,10 +329,10 @@ class AssistantViewModel(
     }
 
     fun selectScenario(name: String) {
-        DrivingScenario.ALL.firstOrNull { it.name == name }?.let(vehicle::play)
+        DrivingScenario.ALL.firstOrNull { it.name == name }?.let(simulated::play)
     }
 
-    fun setConnected(connected: Boolean) = vehicle.setConnected(connected)
+    fun setConnected(connected: Boolean) = simulated.setConnected(connected)
 
     fun refreshClips() {
         _state.update { it.copy(clips = ClipProvider.clips(getApplication()).map { f -> f.name }) }
@@ -310,6 +348,7 @@ class AssistantViewModel(
         }
         speech?.close()
         llm?.close()
+        platformCar?.disconnect()
     }
 
     private fun isEmulator(): Boolean =
@@ -322,5 +361,6 @@ class AssistantViewModel(
     private companion object {
         const val TICK_MS = 200L
         const val TAG = "earshot"
+        const val PERMISSION_CONTROL_CAR_CLIMATE = "android.car.permission.CONTROL_CAR_CLIMATE"
     }
 }

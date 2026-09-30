@@ -258,19 +258,38 @@ private fun DeveloperPanel(
     OutlinedCard(Modifier.fillMaxWidth(), colors = CardDefaults.outlinedCardColors()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Developer view", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(
-                "SIMULATED VEHICLE. This panel is a test tool, not part of the in-car interface.",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.error,
-            )
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DrivingScenario.ALL.forEach { s ->
-                    FilterChip(selected = state.scenario == s.name, onClick = { onScenario(s.name) }, label = { Text(s.name) })
+            if (state.carApi) {
+                Text(
+                    if (state.realClimateWrites) {
+                        "CAR API: real driving-state signals and climate writes (emulator vehicle HAL). Test tool, not in-car UI."
+                    } else {
+                        "CAR API: real driving-state signals; simulated climate writes. Test tool, not in-car UI."
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                val ux =
+                    when (state.uxRestricted) {
+                        true -> "required (voice only)"
+                        false -> "not required"
+                        null -> "unavailable"
+                    }
+                Text("Platform UX restrictions: $ux", style = MaterialTheme.typography.bodySmall)
+            } else {
+                Text(
+                    "SIMULATED VEHICLE. This panel is a test tool, not part of the in-car interface.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DrivingScenario.ALL.forEach { s ->
+                        FilterChip(selected = state.scenario == s.name, onClick = { onScenario(s.name) }, label = { Text(s.name) })
+                    }
                 }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Vehicle connection", Modifier.weight(1f))
-                Switch(checked = state.connected, onCheckedChange = onConnected)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Vehicle connection", Modifier.weight(1f))
+                    Switch(checked = state.connected, onCheckedChange = onConnected)
+                }
             }
             val speed = state.speedKmh?.let { String.format(Locale.US, "%.0f km/h", it) } ?: "no signal"
             Text("Signals: $speed, gear ${state.gear?.name?.lowercase() ?: "no signal"} → ${state.drivingState}")

@@ -27,3 +27,5 @@ requirement carry `@Verifies("SR-n")`; [traceability.md](traceability.md) is gen
 | SR-19 | No audio capture while text-to-speech is playing. | SG-8 | manual test plan |
 | SR-20 | The app has no `INTERNET` permission and exports no component except the launcher activity. | TH-2, TH-6 | build check on the merged manifest (`:app:verify<Variant>MergedManifest`, part of `check`) |
 | SR-21 | Every turn writes a trace with per-stage latency, the host it was measured on, and whether the audio came from the microphone or a clip. | G4 | unit tests |
+| SR-22 | On the automotive emulator, speed and gear come from the car API. A value that cannot be read (unavailable, error status, missing permission, service disconnected) is treated as missing, so the driving state becomes unknown and is handled as moving; speed wins over a conflicting park gear. | SG-4 | unit tests |
+| SR-23 | When the platform's UX restrictions require distraction-optimized UI, the assistant behaves as if moving even if the signals say parked; if the restrictions service cannot be reached on a car, restrictions are assumed. The stricter of the two wins. | SG-3 | unit tests |

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Privileged-permission allowlist for a privileged install of Earshot on the Android Automotive
+     emulator (scripts/install-privileged.sh). Least privilege: only the climate-control permission,
+     which the app needs to write HVAC properties; everything else it uses is normal or runtime. -->
+<permissions>
+    <privapp-permissions package="io.github.ardaulas.earshot">
+        <permission name="android.car.permission.CONTROL_CAR_CLIMATE" />
+    </privapp-permissions>
+</permissions>
