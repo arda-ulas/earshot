@@ -6,12 +6,12 @@ requirement carry `@Verifies("SR-n")`; [traceability.md](traceability.md) is gen
 
 | ID | Requirement | From | Verified by |
 |---|---|---|---|
-| SR-1 | No vehicle action unless the command is in domain and the speech-to-text confidence is known and at or above the threshold. Negated, interrogative, unsupported-target and multi-action utterances never become actions and do not reach the language model. | SG-1, TH-1 | unit tests (incl. audit regression) |
+| SR-1 | No vehicle action unless the command is in domain and the speech-to-text confidence is known and at or above the threshold. Negated, interrogative, unsupported-target, multi-target, conflicting (on and off, warmer and cooler) and multi-number utterances, and words outside the command vocabulary, never become actions; negated, interrogative and rejected utterances do not reach the language model. | SG-1, TH-1 | unit tests (incl. audit regression) |
 | SR-2 | Below the confidence threshold, the assistant asks once to repeat, then stops. It never guesses an action. | SG-1 | unit tests |
-| SR-3 | Every command value is bounded. An explicit out-of-range value, including a signed or fractional one ("-21", "28.5"), is answered with the valid range and no action, never clamped or truncated. A relative change that would pass a bound stops at the bound and says so. | SG-2 | unit tests (incl. property tests with signed values) |
+| SR-3 | Every command value is bounded. An explicit out-of-range value, including a signed or fractional one ("-21", "28.5"), is answered with the valid range and no action, never clamped or truncated. A relative word with a number is a change by that number ("3 degrees warmer"), never a set-point. A relative change that would pass a bound stops at the bound and says so; a relative change from a value already outside the range does nothing and says so. | SG-2 | unit tests (incl. property tests with signed values) |
 | SR-4 | A turn decided while moving or unknown shows nothing on screen, and the climate panel is shown only if the car is still parked after its reads; screen-dependent requests are refused with a short spoken summary. When the car starts moving, the app removes parked-only content from the screen and stops a long parked reply. | SG-3 | unit tests (decision and panel re-check); app revocation: manual test plan |
 | SR-5 | Spoken replies while moving or unknown are at most 12 words. | SG-3 | unit tests |
-| SR-6 | Missing, stale or ambiguous driving signals are treated as moving. A stopped vehicle in drive or reverse counts as moving. | SG-4 | unit tests |
+| SR-6 | Missing, stale or ambiguous driving signals are treated as moving. A stopped vehicle in drive or reverse counts as moving, and so does a zero speed with no gear reading. Parked needs park with a known zero speed, or neutral with zero speed for more than 2 s. | SG-4 | unit tests |
 | SR-7 | An action whose vehicle write cannot start within 5 s of the end of the utterance is discarded; the absolute deadline is checked immediately before the write, after any reads. | SG-5 | unit tests (fake clock, slow-gateway regression) |
 | SR-8 | Visibility-reducing commands (defrost off; fan off while the front defrost is on or unknown) need a spoken yes while moving or unknown. | SG-6 | unit tests |
 | SR-9 | Language-model output must parse exactly into the command schema with in-bounds values; anything else is "not understood" and nothing happens. | SG-7 | unit tests |
@@ -19,7 +19,7 @@ requirement carry `@Verifies("SR-n")`; [traceability.md](traceability.md) is gen
 | SR-11 | A language-model timeout or failure is "not understood" and nothing happens. | SG-7 | unit tests (fault injection) |
 | SR-12 | Model files are checked against pinned size and SHA-256, and the app loads only a verified copy in app-private storage, so the checked bytes are the loaded bytes. No valid speech model disables the assistant with an on-screen reason; an invalid language model disables only the fallback. | TH-4 | unit tests (fault injection, snapshot) |
 | SR-13 | With the vehicle connection down, writes are disabled and the assistant says vehicle controls are unavailable. | fail-safe | unit tests (fault injection) |
-| SR-14 | A rejected or timed-out write is reported by voice; there is no retry. | fail-safe | unit tests (fault injection) |
+| SR-14 | A rejected or timed-out write is reported by voice; there is no retry. When the wait times out the reply says the change could not be confirmed, not that it failed, because the write may still complete. | fail-safe | unit tests (fault injection) |
 | SR-15 | The spoken confirmation of an action comes from reading the property back after the write, never from the request. | fail-safe | unit tests |
 | SR-16 | At most one vehicle action per turn. | fail-safe | unit tests |
 | SR-17 | Only allowlisted comfort properties can be written. | deny by default | by construction (`ClimateProperty`), unit tests |

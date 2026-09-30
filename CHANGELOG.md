@@ -16,9 +16,13 @@ test clips unless stated otherwise. Nothing here has run in a vehicle.
   not reproducible with the image's hooks. The phone path is unchanged.
 - An external hostile review of v0.2.1 found 15 P1 and 8 P2 issues, and a re-review of the first fixes
   found more. Each P1 has a regression test. Main changes:
-  - Rules refuse negated, questioning, multi-request, unsupported-target and unsupported-unit
-    requests, and words outside the action vocabulary; signed or fractional numbers are out of range,
-    never rounded to a valid value. Refused requests never reach the language model.
+  - Rules refuse negated, questioning, multi-request, conflicting, unsupported-target and
+    unsupported-unit requests, more than one number, unknown symbols, and words outside the action
+    vocabulary; signed or fractional numbers are out of range, never rounded to a valid value; "3
+    degrees warmer" is a change of 3, never a set-point. Refused requests never reach the language
+    model.
+  - A zero speed with no gear reading is unknown, not parked; a relative change from a temperature
+    already outside 16-28 °C does nothing; a write whose wait timed out is reported as unconfirmed.
   - A spoken yes only confirms the pending question it answers, and only after the question was
     delivered, and an answer that started before the question was delivered is not accepted; a new
     command drops the pending one.

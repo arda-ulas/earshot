@@ -11,9 +11,10 @@ import io.github.ardaulas.earshot.core.policy.DrivingState
  * 4. Gear in drive or reverse: MOVING, even when stopped (fail-safe; see the ADR on fail-safe defaults).
  * 5. Gear in park with a known zero speed: PARKED. Park with no readable speed: UNKNOWN (audit
  *    re-check N1: a park gear alone is not enough).
- * 6. Speed zero, continuously, for more than [parkedAfterMs]: PARKED. Zero for less: MOVING (it was
- *    just moving).
- * 7. Otherwise: UNKNOWN.
+ * 6. No gear reading: UNKNOWN, even at zero speed (a car stopped in drive looks the same).
+ * 7. Neutral with speed zero, continuously, for more than [parkedAfterMs]: PARKED. Zero for less:
+ *    MOVING (it was just moving).
+ * 8. Otherwise: UNKNOWN.
  *
  * "Continuously" means consecutive valid zero-speed readings with no gap longer than [staleAfterMs]
  * between them; an invalid reading, a gap, or a reading older than the previous one resets it
@@ -62,7 +63,13 @@ class DrivingStateResolver(
                 if (speed == 0.0) DrivingState.PARKED else DrivingState.UNKNOWN
             }
 
-            Gear.NEUTRAL, null -> {
+            // No gear reading: a car stopped in drive looks exactly like this, so never parked
+            // (pre-review F5).
+            null -> {
+                DrivingState.UNKNOWN
+            }
+
+            Gear.NEUTRAL -> {
                 val zeroSince = zeroSinceMs
                 when {
                     speed == null || zeroSince == null -> DrivingState.UNKNOWN

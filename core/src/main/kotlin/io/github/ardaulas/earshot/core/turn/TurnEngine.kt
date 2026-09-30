@@ -413,6 +413,9 @@ class TurnEngine(
 
             is Command.AdjustTemp -> {
                 val current = readInt(ClimateProperty.CABIN_TEMPERATURE_C) ?: return unavailable(turn, verdict)
+                // A value outside the range (set by another control) is never "corrected" by a relative
+                // command: clamping 30 + 1 to 28 would cool the cabin on "warmer" (pre-review F8).
+                if (current !in Bounds.TEMP_C) return answered(Responses.temperatureOutsideRange(current), Outcome.NO_CHANGE)
                 val target = (current + command.delta).coerceIn(Bounds.TEMP_C)
                 if (target == current) {
                     answered(Responses.temperatureAtLimit(current), Outcome.NO_CHANGE)
@@ -506,7 +509,12 @@ class TurnEngine(
         // Both checks sit immediately before the write, after every read that could have taken time.
         if (!stillAllowed(a)) return turn.result(verdict, Outcome.DISCARDED_STATE_CHANGED, Responses.STATE_CHANGED, null)
         if (clock.millis() > a.deadlineMs) return turn.result(verdict, Outcome.DISCARDED_STALE, Responses.STALE, null)
-        val result = withTimeoutOrNull(config.writeTimeoutMs) { vehicle.write(property, value, a.deadlineMs) } ?: WriteResult.TimedOut
+        val result = withTimeoutOrNull(config.writeTimeoutMs) { vehicle.write(property, value, a.deadlineMs) }
+        if (result == null) {
+            // The wait stopped, but the write may still complete: never claim it failed (pre-review F7).
+            turn.writeResult = WriteResult.TimedOut
+            return turn.result(verdict, Outcome.FAILED, Responses.writeUnconfirmed(command), null)
+        }
         turn.writeResult = result
         val readBack = readInt(property)
         return when (result) {

@@ -38,6 +38,11 @@ object Responses {
 
     fun writeFailed(command: Command) = "I couldn't change the ${subject(command)}."
 
+    fun writeUnconfirmed(command: Command) = "I couldn't confirm the change to the ${subject(command)}. Please check it."
+
+    fun temperatureOutsideRange(celsius: Int) =
+        "It's $celsius degrees, outside the range I can change. Say a temperature from ${Bounds.TEMP_C.first} to ${Bounds.TEMP_C.last}."
+
     fun confirmQuestion(command: Command): String = "${describe(command)}? Say yes or no."
 
     fun temperatureNow(celsius: Int): String {

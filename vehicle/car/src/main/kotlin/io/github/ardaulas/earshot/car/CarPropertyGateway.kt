@@ -8,7 +8,10 @@ import io.github.ardaulas.earshot.core.vehicle.SimulatedVehicleGateway
 import io.github.ardaulas.earshot.core.vehicle.VehicleGateway
 import io.github.ardaulas.earshot.core.vehicle.WriteResult
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
@@ -23,6 +26,9 @@ import kotlin.math.roundToInt
  *   emulator install), otherwise to [simulatedClimate]. Area ids are discovered once, at construction.
  *   Relative reads need every seat area to agree. The write deadline is checked right before the first
  *   platform write.
+ * - Climate reads and writes run on their own scope and the caller only awaits them, so a caller's
+ *   timeout really stops the wait even while a blocking car call carries on (pre-review F7). A write
+ *   that is still running when the caller gives up may still take effect; the turn engine says so.
  */
 class CarPropertyGateway(
     private val car: CarProperties,
@@ -36,7 +42,12 @@ class CarPropertyGateway(
     private val fanAreas = car.areaIds(CarIds.HVAC_FAN_SPEED)
     private val acAreas = car.areaIds(CarIds.HVAC_AC_ON)
 
+    private val calls = CoroutineScope(SupervisorJob() + io)
+
     @Volatile private var cached: SignalSample? = null
+
+    /** Runs a blocking car call off the caller; cancelling the caller stops the wait, not the call. */
+    private suspend fun <T> offload(block: () -> T): T = calls.async { block() }.await()
 
     override val isAvailable: Boolean get() = car.connected
 
@@ -59,8 +70,8 @@ class CarPropertyGateway(
     override suspend fun read(property: ClimateProperty): ReadResult {
         if (!realClimate) return simulatedClimate.read(property)
         val value =
-            withContext(io) {
-                if (!car.connected) return@withContext null
+            offload {
+                if (!car.connected) return@offload null
                 when (property) {
                     ClimateProperty.CABIN_TEMPERATURE_C -> {
                         agreed(tempAreas.map { car.readFloat(CarIds.HVAC_TEMPERATURE_SET, it)?.takeIf(Float::isFinite)?.roundToInt() })
@@ -93,8 +104,8 @@ class CarPropertyGateway(
     ): WriteResult {
         if (!realClimate) return simulatedClimate.write(property, value, notAfterMs)
         if (value !in SimulatedVehicleGateway.validRange(property)) return WriteResult.Rejected
-        return withContext(io) {
-            if (!car.connected) return@withContext WriteResult.Unavailable
+        return offload {
+            if (!car.connected) return@offload WriteResult.Unavailable
             val areas =
                 when (property) {
                     ClimateProperty.CABIN_TEMPERATURE_C -> tempAreas
@@ -103,9 +114,9 @@ class CarPropertyGateway(
                     ClimateProperty.FRONT_DEFROST -> intArrayOf(CarIds.WINDOW_FRONT)
                     ClimateProperty.REAR_DEFROST -> intArrayOf(CarIds.WINDOW_REAR)
                 }
-            if (areas.isEmpty()) return@withContext WriteResult.Rejected
+            if (areas.isEmpty()) return@offload WriteResult.Rejected
             // Last check before the first effect (audit re-check #8). Once started, all areas are written.
-            if (clock.millis() > notAfterMs) return@withContext WriteResult.TimedOut
+            if (clock.millis() > notAfterMs) return@offload WriteResult.TimedOut
             var ok = true
             for (area in areas) {
                 ok =

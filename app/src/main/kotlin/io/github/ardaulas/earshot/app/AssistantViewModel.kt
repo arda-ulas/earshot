@@ -147,6 +147,7 @@ class AssistantViewModel(
 
     init {
         viewModelScope.launch(Dispatchers.Default) { tickDrivingSignals() }
+        viewModelScope.launch(Dispatchers.Default) { guardParkedOutput() }
         viewModelScope.launch { speaker.available.collect { a -> _state.update { it.copy(ttsAvailable = a) } } }
         viewModelScope.launch { loadModels() }
         refreshClips()
@@ -155,9 +156,16 @@ class AssistantViewModel(
     /** True while the current reply (screen content or a long answer) is only allowed when parked. */
     @Volatile private var parkedOnlyOutput = false
 
+    /** A confirmation question delivered only on screen; it stops being answerable with the screen. */
+    @Volatile private var screenConfirmationId: String? = null
+
     /** The car is no longer parked: take parked-only content off the screen and stop a long reply (audit #7). */
     private fun revokeParkedOutput() {
         if (_state.value.screen != null) _state.update { it.copy(screen = null) }
+        screenConfirmationId?.let { id ->
+            screenConfirmationId = null
+            engine?.confirmationFailed(id)
+        }
         if (parkedOnlyOutput) {
             parkedOnlyOutput = false
             speaker.stop()
@@ -204,6 +212,22 @@ class AssistantViewModel(
                 )
             }
             delay(TICK_MS)
+        }
+    }
+
+    /**
+     * Parked-only output follows the driving state even when the signal tick is stuck in a car-service
+     * call: this loop makes no car call, so a stale reading ages to unknown and the screen is revoked
+     * (pre-review F6). UX restrictions are read from their flow, also without a call.
+     */
+    private suspend fun guardParkedOutput() {
+        while (true) {
+            val driving = drivingStateNow()
+            if (driving != DrivingState.PARKED) revokeParkedOutput()
+            if (_state.value.drivingState != driving || _state.value.uxRestricted != uxRestricted()) {
+                _state.update { it.copy(drivingState = driving, uxRestricted = uxRestricted()) }
+            }
+            delay(GUARD_MS)
         }
     }
 
@@ -425,6 +449,7 @@ class AssistantViewModel(
 
             visible && drivingStateNow() == DrivingState.PARKED -> {
                 _state.update { it.copy(screen = ScreenContent.Text(question)) }
+                screenConfirmationId = id
                 turnEngine.confirmationDelivered(id)
             }
 
@@ -471,6 +496,7 @@ class AssistantViewModel(
 
     private companion object {
         const val TICK_MS = 200L
+        const val GUARD_MS = 100L
         const val TAG = "earshot"
         const val MAX_CLIP_BYTES = 2_000_000L
         const val TOO_LONG = "That was too long. Please say it again."

@@ -199,4 +199,29 @@ class CarPropertyGatewayTest {
             gw.write(ClimateProperty.FAN_LEVEL, 3) shouldBe WriteResult.Rejected
             gw.read(ClimateProperty.AC) shouldBe ReadResult.Unavailable
         }
+
+    @Test
+    @Verifies("SR-6", "SR-22")
+    fun `zero speed with no readable gear is unknown, not parked after 2 s (pre-review F5)`() =
+        runTest {
+            val gw = gateway(realClimate = false)
+            drive(0f, null)
+            stateAfter(gw, 3_000) shouldBe DrivingState.UNKNOWN
+        }
+
+    @Test
+    @Verifies("SR-14")
+    fun `a caller's timeout stops the wait for a blocking car write (pre-review F7)`() {
+        car.areas[CarIds.HVAC_TEMPERATURE_SET] = intArrayOf(1)
+        car.writeBlockMs = 1_500
+        val gw = CarPropertyGateway(car, clock, realClimate = true, simulatedClimate = SimulatedVehicleGateway(clock))
+        val started = System.nanoTime()
+        val result =
+            kotlinx.coroutines.runBlocking {
+                kotlinx.coroutines.withTimeoutOrNull(100) { gw.write(ClimateProperty.CABIN_TEMPERATURE_C, 22) }
+            }
+        val waitedMs = (System.nanoTime() - started) / 1_000_000
+        result shouldBe null
+        (waitedMs < 1_000) shouldBe true
+    }
 }

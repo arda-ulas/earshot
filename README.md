@@ -217,7 +217,9 @@ The untuned first setup (Qwen2.5-0.5B, first prompt, writing whole commands) sco
 wrong-direction answers. After tuning, the closest alternatives were Qwen3-0.6B writing whole
 commands (25/32) and Qwen2.5-0.5B writing whole commands (20/32), also with no wrong-direction
 answers. The shipped model's four misses: "I can't feel my fingers" (out of domain), "it's muggy"
-(cooler), "clear the rear window" (out of domain) and "good morning" (`query_gear`).
+(cooler), "clear the rear window" (out of domain) and "good morning" (`query_gear`). Outside that
+set, a later run on synthetic clips (`clip`, host build) found a wrong-direction answer: "it's really
+stuffy in here" became `warmer` for all four voices. It still needs a spoken yes before any change.
 
 Limits: 32 phrases is a small set, and one phrase is about 3 points; treat differences of one or two
 phrases as noise. The phrases are typed text, not speech. A separate AI agent audited each tuned
@@ -267,7 +269,8 @@ What the code does:
   unsupported-target or multi-part requests and words outside the command vocabulary never become
   actions. One write per turn, no retry; the reply comes from reading the value back. The 5 s
   deadline and the driving state are re-checked immediately before each write. On the car API the
-  1 s write timeout stops waiting but cannot interrupt a platform call that has already started.
+  1 s write timeout stops waiting but cannot interrupt a platform call that has already started, so
+  the reply then says the change could not be confirmed.
 - Permissions: `RECORD_AUDIO`; on Android Automotive only, `CAR_SPEED`, `CAR_POWERTRAIN` and
   `CONTROL_CAR_CLIMATE` (the last granted only to the emulator's privileged install); AndroidX core's
   own signature-level `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`. There is no `INTERNET`, and only the

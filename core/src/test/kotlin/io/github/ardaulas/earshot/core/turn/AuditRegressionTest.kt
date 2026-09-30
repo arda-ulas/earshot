@@ -2,6 +2,7 @@
 
 package io.github.ardaulas.earshot.core.turn
 
+import io.github.ardaulas.earshot.core.command.Bounds
 import io.github.ardaulas.earshot.core.command.Command
 import io.github.ardaulas.earshot.core.interpret.LmInterpreter
 import io.github.ardaulas.earshot.core.interpret.RuleInterpreter
@@ -380,4 +381,98 @@ class AuditRegressionTest {
         DrivingStateResolver().apply { update(SignalSample(null, Gear.PARK, 0)) }.current(0) shouldBe DrivingState.UNKNOWN
         DrivingStateResolver().apply { update(SignalSample(0.0, Gear.PARK, 0)) }.current(0) shouldBe DrivingState.PARKED
     }
+
+    // --- Pre-review of round 2 (2026-09-30) ---------------------------------------------------
+
+    @Test
+    @Verifies("SR-1")
+    fun `pre-review F1 - conflicting directions and complaints never change the temperature`() =
+        runTest {
+            val r = rig(DrivingState.MOVING)
+            for (text in listOf(
+                "make it warmer cooler",
+                "make it cooler, warmer",
+                "it's colder in here",
+                "its hotter in here",
+                "i like it cooler",
+            )) {
+                r.say(text).outcome shouldBe Outcome.REFUSED
+            }
+            r.vehicle.writeCount shouldBe 0
+            r.lm.callCount shouldBe 0
+        }
+
+    @Test
+    @Verifies("SR-1")
+    fun `pre-review F2 - a second request without a conjunction is refused, not dropped`() =
+        runTest {
+            val r = rig(DrivingState.MOVING)
+            for (text in listOf("turn on the defrost fan off", "turn the ac on fan off", "fan off ac on", "temperature 22 fan 3")) {
+                r.say(text).outcome shouldBe Outcome.REFUSED
+            }
+            r.vehicle.writeCount shouldBe 0
+        }
+
+    @Test
+    @Verifies("SR-3")
+    fun `pre-review F3 - a relative word with a number is a change by that number, never a set-point`() {
+        val rules = RuleInterpreter()
+        rules.interpret("make it 17 degrees warmer") shouldBe RuleResult.OutOfRange("temperature change", Bounds.TEMP_DELTA)
+        rules.interpret("make it 18 degrees cooler") shouldBe RuleResult.OutOfRange("temperature change", Bounds.TEMP_DELTA)
+        rules.interpret("increase the temperature by 3") shouldBe RuleResult.Matched(Command.AdjustTemp(3))
+        rules.interpret("lower the temperature by 4") shouldBe RuleResult.Matched(Command.AdjustTemp(-4))
+        rules.interpret("make it warmer by 3") shouldBe RuleResult.Matched(Command.AdjustTemp(3))
+        rules.interpret("make it 2 degrees cooler") shouldBe RuleResult.Matched(Command.AdjustTemp(-2))
+        rules.interpret("turn the heat up to 25").shouldBeInstanceOf<RuleResult.Rejected>()
+    }
+
+    @Test
+    @Verifies("SR-3")
+    fun `pre-review F4 - extra numbers, symbols and dashes never become a valid value`() {
+        val rules = RuleInterpreter()
+        for (text in listOf(
+            "set the temperature to 21 5",
+            "set the temperature to twenty one five",
+            "set the temperature to 20 20",
+            "set the temperature to 21\u00bd",
+            "set fan to 3\u00bd",
+            "set the temperature to 21 \u2109",
+            "set the temperature to 21-22",
+        )) {
+            (rules.interpret(text) is RuleResult.Matched) shouldBe false
+        }
+        for (text in listOf("set the temperature to \u201321", "set temperature to-21", "set the temperature to \uFF0D21")) {
+            rules.interpret(text) shouldBe RuleResult.OutOfRange("temperature", Bounds.TEMP_C)
+        }
+    }
+
+    @Test
+    @Verifies("SR-1")
+    fun `pre-review F10 - a negated sentence without a climate word does not reach the language model`() =
+        runTest {
+            val r = rig(DrivingState.PARKED)
+            r.say("I'm not freezing").outcome shouldBe Outcome.REFUSED
+            r.lm.callCount shouldBe 0
+        }
+
+    @Test
+    @Verifies("SR-6", "SR-22")
+    fun `pre-review F5 - zero speed with no gear reading is never parked`() {
+        val resolver = DrivingStateResolver()
+        for (t in 0L..3_000L step 200) resolver.update(SignalSample(0.0, null, t))
+        resolver.current(3_000) shouldBe DrivingState.UNKNOWN
+    }
+
+    @Test
+    @Verifies("SR-3")
+    fun `pre-review F8 - a relative change from outside the range never writes, in either direction`() =
+        runTest {
+            val r = rig(DrivingState.MOVING)
+            r.vehicle.readOverride[ClimateProperty.CABIN_TEMPERATURE_C] = 30
+            r.say("make it warmer").outcome shouldBe Outcome.NO_CHANGE
+            r.say("make it cooler").outcome shouldBe Outcome.NO_CHANGE
+            r.vehicle.readOverride[ClimateProperty.CABIN_TEMPERATURE_C] = 12
+            r.say("make it cooler").outcome shouldBe Outcome.NO_CHANGE
+            r.vehicle.writeCount shouldBe 0
+        }
 }

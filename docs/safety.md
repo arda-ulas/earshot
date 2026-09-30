@@ -162,7 +162,8 @@ The simulated vehicle also rejects values outside each property's range.
 |---|---|
 | Driving signals: none received, or the latest is older than 1 s | `UNKNOWN`, handled as moving |
 | Gear in drive or reverse at a standstill | moving |
-| Neutral or no gear, speed zero | moving for the first 2 s, then parked; unknown if the speed is missing |
+| Neutral, speed zero | moving for the first 2 s, then parked; unknown if the speed is missing |
+| No gear reading, speed zero | unknown (handled as moving) |
 | Speech-to-text confidence (timeout, error, no value) | too low: re-prompt once, then stop |
 | Front defrost state (could not be read) | on, so fan off counts as visibility-reducing |
 | Vehicle connection | down: writes refused, "Vehicle controls are unavailable." |
@@ -206,7 +207,7 @@ the maximum, 28 degrees.").
 | Language-model time | 10 s | `LmInterpreter.DEFAULT_TIMEOUT_MS` |
 | Action start | the write must start within 5 s of the end of the utterance, checked immediately before it (and on the car API before the first platform write), else discarded | `TurnConfig.actionBudgetMs`, `CarPropertyGateway.write` |
 | Confirmation window | 10 s from delivery of the question; the answer must start after delivery | `TurnConfig.confirmationTtlMs` |
-| Vehicle read or write | 1 s, no retry; on the car API the wait stops but a started platform call is not interrupted | `TurnConfig.writeTimeoutMs` |
+| Vehicle read or write | 1 s, no retry; on the car API the wait stops but a started platform call is not interrupted, so the reply says the change could not be confirmed | `TurnConfig.writeTimeoutMs` |
 | Vehicle writes per turn | 1 | `TurnEngine` |
 | Spoken reply while moving | at most 12 words | `Policy.MAX_WORDS_WHILE_MOVING` |
 | Trace files | newest 7 kept, none older than 7 days, 1 MB per file | `JsonlTraceWriter` |
@@ -372,15 +373,22 @@ parked. [10]
   On the Android Automotive emulator they come from its vehicle HAL, set with test hooks. The value
   bounds are those of the simulated cabin; the emulator's fan range is not mapped to the 0-5 model.
 - **Car-service calls cannot be interrupted.** Timeouts stop waiting for a platform call, but a call
-  that has started runs to its end. Driving signals are polled off the main thread; if polling stalls,
-  the state ages to unknown.
+  that has started runs to its end, so a timed-out write may still take effect; the reply says the
+  change could not be confirmed. Driving signals are polled off the main thread; if polling stalls,
+  the state ages to unknown, and a separate loop with no car calls removes parked-only output. The
+  car connection and area discovery still run once on the main thread when the screen is created.
+- **How fresh "right before the write" is.** The re-check uses the resolver's latest reading, which is
+  at most 1 s old plus one 200 ms poll; on the car API a speed value may be up to 2 s old by the
+  vehicle's own timestamp when it is polled. The re-check is therefore about 3 s fresh at worst, not
+  instantaneous.
 - **Late re-prompts under host load.** whisper.cpp checks its abort flag only after the encoder
   finishes and after each decoder step, not during the encoder. On the arm64 API 36 emulator, with
   the Apple silicon laptop heavily loaded (load average about 20), an aborted speech-to-text call
   took up to about 20 s to return, so the re-prompt came late. No action ran: the transcript was
   empty.
 - **Language-model misreads remain.** On the held-out set, "good morning" became a gear query and "it's
-  muggy" became cooler. The confirmation question is the control, not the model's accuracy.
+  muggy" became cooler. On the harness's synthetic clips (host build, `clip`), "it's really stuffy in
+  here" became warmer for all four voices, the opposite direction. The confirmation question is the control, not the model's accuracy.
 - **A short hazard list.** The eight hazards come from the author's project plan, which is not in this
   repository. There is no exposure or
   controllability rating, no systematic search for situations where the function, working as built, is

@@ -52,11 +52,17 @@ class RuleInterpreter {
         val actions = listOfNotNull(temperature(t), fan(t), defrost(t), ac(t))
         if (actions.isEmpty()) {
             return when {
-                !domain -> RuleResult.NoMatch
-                unsupportedTarget(t) -> RuleResult.Rejected("unsupported target")
+                // A negated sentence never reaches the language model, domain word or not ("I'm not cold").
                 NEGATION.containsMatchIn(t) -> RuleResult.Rejected("negated")
+
+                !domain -> RuleResult.NoMatch
+
+                unsupportedTarget(t) -> RuleResult.Rejected("unsupported target")
+
                 raw.endsWith("?") || QUESTION.containsMatchIn(t) -> RuleResult.Rejected("question")
+
                 CONJUNCTION.containsMatchIn(t) -> RuleResult.Rejected("more than one request")
+
                 else -> RuleResult.NoMatch
             }
         }
@@ -71,6 +77,16 @@ class RuleInterpreter {
 
             actions.size > 1 || CONJUNCTION.containsMatchIn(t) -> RuleResult.Rejected("more than one action")
 
+            // One target, one direction, one number: a second request must never vanish silently, and
+            // a number must never be truncated to a valid one (pre-review F1, F2, F4).
+            targets(t) > 1 -> RuleResult.Rejected("more than one action")
+
+            ON.containsMatchIn(t) && OFF.containsMatchIn(t) -> RuleResult.Rejected("conflicting")
+
+            WARMER_WORD.containsMatchIn(t) && COOLER_WORD.containsMatchIn(t) -> RuleResult.Rejected("conflicting")
+
+            NUMBER.findAll(t).count() > 1 -> RuleResult.Rejected("more than one number")
+
             // Deny by default: an action utterance may contain only command vocabulary, so "the pizza
             // should be warmer" cannot change the cabin (audit re-check #1).
             t.split(" ").any { it !in ACTION_VOCABULARY && !it.all(Char::isDigit) } -> RuleResult.Rejected("unrecognised words")
@@ -80,6 +96,9 @@ class RuleInterpreter {
             else -> actions.single()
         }
     }
+
+    /** How many different things the utterance names: temperature, fan, defrost, AC. */
+    private fun targets(t: String): Int = listOf(TEMP_TARGET, FAN_TARGET, DEFROST_TARGET, AC).count { it.containsMatchIn(t) }
 
     /** "window" is a supported target only for defrost ("defrost the rear window"). */
     private fun unsupportedTarget(t: String): Boolean {
@@ -125,6 +144,17 @@ class RuleInterpreter {
         STEP.find(t)?.let { m ->
             val direction = if (m.groupValues[1] == "up") 1 else -1
             return bounded(m.groupValues[2], Bounds.TEMP_DELTA, "temperature change") { Command.AdjustTemp(direction * it) }
+        }
+        // A relative word with a number is a change by that number ("3 degrees warmer", "raise it by
+        // 2"), never a set-point and never a default step of 1 (pre-review F3). With "to"/"at" it is
+        // ambiguous ("turn up the heat to 25") and refused.
+        val number = NUMBER.find(t)
+        val up = WARMER_WORD.containsMatchIn(t)
+        val down = COOLER_WORD.containsMatchIn(t)
+        if (number != null && (up || down)) {
+            if (SET_TO.containsMatchIn(t)) return RuleResult.Rejected("unclear change")
+            val direction = if (up) 1 else -1
+            return bounded(number.value, Bounds.TEMP_DELTA, "temperature change") { Command.AdjustTemp(direction * it) }
         }
         val mentionsTemp = "temperature" in t || "degrees" in t || "heat" in t || "thermostat" in t
         if (mentionsTemp && !QUESTION.containsMatchIn(t)) {
@@ -223,6 +253,12 @@ class RuleInterpreter {
         val CONJUNCTION = Regex("""\b(and|but|then|also|plus)\b""")
         val STEP_WORDS = Regex("""\b(up|down|by|warmer|cooler|raise|lower|increase|decrease)\b""")
         val UNSUPPORTED_UNIT = Regex("""\b(fahrenheit|kelvin|percent|f)\b""")
+        val NUMBER = Regex("""\b\d+\b""")
+        val WARMER_WORD = Regex("""\b(warmer|hotter|warm|heat up|up|raise|increase)\b""")
+        val COOLER_WORD = Regex("""\b(cooler|colder|cool|down|lower|decrease)\b""")
+        val TEMP_TARGET = Regex("""\b(temperature|thermostat|heat|heating|heater|degrees?|warmer|hotter|cooler|colder|warm)\b""")
+        val FAN_TARGET = Regex("""\bfan\b""")
+        val DEFROST_TARGET = Regex("""\bdefrost\b""")
 
         /** Every word an action utterance may contain; anything else rejects the action. */
         val ACTION_VOCABULARY =
@@ -236,7 +272,6 @@ class RuleInterpreter {
                 "i",
                 "id",
                 "want",
-                "like",
                 "lets",
                 "let",
                 "us",
@@ -247,7 +282,6 @@ class RuleInterpreter {
                 "a",
                 "an",
                 "it",
-                "its",
                 "this",
                 "that",
                 "to",
@@ -315,7 +349,6 @@ class RuleInterpreter {
                 "car",
                 "cabin",
                 "inside",
-                "here",
                 "in",
                 "please",
             )

@@ -425,14 +425,14 @@ class TurnEngineTest {
 
     @Test
     @Verifies("SR-14", "SR-16")
-    fun `a write that hangs fails after the write timeout, with no retry`() =
+    fun `a write that hangs stops the wait after the write timeout, with no retry and no claim that it failed`() =
         runTest {
             val h = harness(DrivingState.PARKED, config = TurnConfig(writeTimeoutMs = 1_000))
             h.vehicle.hangWrites = true
             h.speech.queue("Set the temperature to 19.", 0.9f)
             val result = h.handleAndDeliver()
             result.outcome shouldBe Outcome.FAILED
-            result.spoken shouldBe Responses.writeFailed(Command.SetTemp(19))
+            result.spoken shouldBe Responses.writeUnconfirmed(Command.SetTemp(19))
             h.vehicle.writeCount shouldBe 1
         }
 

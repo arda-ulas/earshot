@@ -7,6 +7,9 @@ class FakeCarProperties : CarProperties {
     val booleans = mutableMapOf<Pair<Int, Int>, Boolean?>()
     val areas = mutableMapOf<Int, IntArray>()
     var rejectWrites = false
+
+    /** A blocking platform call: real sleep, as a binder call would block its thread. */
+    var writeBlockMs = 0L
     val writes = mutableListOf<Triple<Int, Int, Any>>()
 
     override fun readFloat(
@@ -59,6 +62,7 @@ class FakeCarProperties : CarProperties {
         value: Any,
         apply: () -> Unit,
     ): Boolean {
+        if (writeBlockMs > 0) Thread.sleep(writeBlockMs)
         if (rejectWrites) return false
         writes += Triple(propertyId, areaId, value)
         apply()

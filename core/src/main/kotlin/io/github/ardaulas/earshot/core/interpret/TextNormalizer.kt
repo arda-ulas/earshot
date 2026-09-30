@@ -40,10 +40,15 @@ object TextNormalizer {
             "ninety" to 90,
         )
 
+    /** Stands in for a character the rules do not know; never part of any vocabulary. */
+    const val UNKNOWN_SYMBOL = "xsymbolx"
+
     fun normalize(raw: String): String {
         val folded =
             raw
                 .lowercase()
+                // Every dash-like character is a minus or a hyphen, never silently dropped (pre-review F4).
+                .replace(Regex("""[\u2010-\u2015\u2212\uFE63\uFF0D]"""), "-")
                 // Curly apostrophes and quotes: "don’t" must stay a negation (audit re-check #1).
                 .replace('\u2019', '\'')
                 .replace('\u2018', '\'')
@@ -64,11 +69,15 @@ object TextNormalizer {
                 .replace(Regex("""(\d)\s*degrees?"""), "$1 degrees")
                 // Keep signs and decimals visible as words before punctuation is stripped, so "-21" and
                 // "28.5" cannot turn into the valid values 21 and 28 (audit #2).
-                .replace(Regex("""(^|[^\w])[-\u2212]\s*(\d)"""), "$1 minus $2")
+                .replace(Regex("""(^|[^\d\s])\s*-\s*(\d)"""), "$1 minus $2")
+                .replace(Regex("""(^|\s)-\s*(\d)"""), "$1 minus $2")
                 .replace(Regex("""(\d)\s*[.,]\s*(\d)"""), "$1 point $2")
                 .replace(Regex("""(\d)\s*[/:]\s*(\d)"""), "$1 slash $2")
                 .replace('-', ' ')
-                .replace(Regex("""[^a-z0-9\s']"""), " ")
+                // Ordinary punctuation becomes a space; any other symbol (½, ℉, emoji, other scripts)
+                // becomes a word no rule knows, so it can never be dropped from an action (pre-review F4).
+                .replace(Regex("""[.,!?;:"()/]"""), " ")
+                .replace(Regex("""[^a-z0-9\s']"""), " $UNKNOWN_SYMBOL ")
                 .replace("'", "")
         return joinNumberWords(folded.split(Regex("""\s+""")).filter { it.isNotEmpty() }).joinToString(" ")
     }
