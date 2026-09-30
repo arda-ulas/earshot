@@ -150,6 +150,12 @@ runtime prompt or with `pm grant`. Driving state is set through the emulator's v
 | A-10 | — | pass | `en-us-x-tpf-local` |
 | A-11 | — | not run | See above |
 
+Re-run on 2026-09-30 after the last interpreter and driving-state fixes (`clip`, same emulator): A-3
+("Set the temperature to 21", acted), U5 ("Make it warmer", acted), A-9 (both refused), A-6 (defrost
+off, confirmed, acted) and A-7 (parked and moving: question, yes, acted) pass. An earlier attempt at
+A-7 was refused as expired: the clip driver took 25 s to select the answer clip, past the 10 s answer
+window, which is the intended behaviour; the driver now selects it while the question turn runs.
+
 Speech-to-text on this AVD was 0.7–1.3 s per clip with the host quiet, and up to 7.8 s while the
 host was busy building (same laptop; not an in-vehicle figure). The phone emulator regression
 (M-rows) after the audit fixes is recorded separately below when run.
