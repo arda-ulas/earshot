@@ -150,26 +150,23 @@ class AssistantViewModel(
         viewModelScope.launch(Dispatchers.Default) { guardParkedOutput() }
         viewModelScope.launch { speaker.available.collect { a -> _state.update { it.copy(ttsAvailable = a) } } }
         viewModelScope.launch { loadModels() }
+        // Old traces go at start-up too, not only when the next turn is written (re-audit 3, N16).
+        viewModelScope.launch(Dispatchers.IO) { runCatching { traces.purge() } }
         refreshClips()
     }
 
     /** True while the current reply (screen content or a long answer) is only allowed when parked. */
     @Volatile private var parkedOnlyOutput = false
 
-    /** A confirmation question delivered only on screen; it stops being answerable with the screen. */
-    @Volatile private var screenConfirmationId: String? = null
-
-    /** The car is no longer parked: take parked-only content off the screen and stop a long reply (audit #7). */
+    /**
+     * The car is no longer parked: take parked-only content off the screen and stop a long reply
+     * (audit #7). Called every guard tick while not parked. The flag is not cleared here, only by the
+     * turn once its speech has ended, so a reply that starts just after a stop is stopped on the next
+     * tick instead of playing on (re-audit 3, N14).
+     */
     private fun revokeParkedOutput() {
         if (_state.value.screen != null) _state.update { it.copy(screen = null) }
-        screenConfirmationId?.let { id ->
-            screenConfirmationId = null
-            engine?.confirmationFailed(id)
-        }
-        if (parkedOnlyOutput) {
-            parkedOnlyOutput = false
-            speaker.stop()
-        }
+        if (parkedOnlyOutput) speaker.stop()
     }
 
     /** The platform's UX restrictions: null on a phone, where there is no restrictions service. */
@@ -404,12 +401,14 @@ class AssistantViewModel(
             viewModelScope.launch {
                 try {
                     val captured = audio()
-                    if (captured.overflowed) {
-                        // Held past the limit: reject the whole utterance rather than act on its start (audit #9).
-                        // The rejected utterance may have been an answer: end any pending question too.
+                    if (captured.overflowed || captured.failed) {
+                        // Held past the limit, or the microphone stopped early: reject the whole utterance
+                        // rather than act on its start (audit #9, re-audit 3 N13). The rejected utterance may
+                        // have been an answer: end any pending question too.
                         turnEngine.abandonConfirmation()
-                        _state.update { it.copy(phase = Phase.SPEAKING, screen = null, lastSpoken = TOO_LONG) }
-                        speaker.speak(TOO_LONG)
+                        val reply = if (captured.failed) MIC_FAILED else TOO_LONG
+                        _state.update { it.copy(phase = Phase.SPEAKING, screen = null, lastSpoken = reply) }
+                        speaker.speak(reply)
                         return@launch
                     }
                     val result = turnEngine.handle(captured.pcm, source, captured.endMs, captured.startMs)
@@ -420,42 +419,37 @@ class AssistantViewModel(
                             lastSpoken = result.spoken,
                             awaitingConfirmation = false,
                             lastTrace = result.trace,
+                            message = result.traceError?.let { e -> "Trace not stored: $e" },
                         )
                     }
                     parkedOnlyOutput = result.screen != null || result.spoken.split(" ").size > Policy.MAX_WORDS_WHILE_MOVING
-                    // Capture stays off until speech is done (SG-8).
-                    val spoken = speaker.speak(result.spoken)
-                    result.confirmationId?.let { id -> deliverConfirmation(turnEngine, id, spoken, result.spoken) }
+                    // Capture stays off until speech is done (SG-8). Parked-only speech is not started
+                    // once the car is no longer parked; if it moves during speech, the guard stops it.
+                    val spoken =
+                        if (parkedOnlyOutput && drivingStateNow() != DrivingState.PARKED) false else speaker.speak(result.spoken)
+                    result.confirmationId?.let { id -> deliverConfirmation(turnEngine, id, spoken) }
                 } finally {
+                    parkedOnlyOutput = false
                     _state.update { it.copy(phase = Phase.IDLE, awaitingConfirmation = engine?.isAwaitingConfirmation ?: false) }
                 }
             }
     }
 
     /**
-     * A confirmation question counts only once delivered (audit #4): spoken, or, with no speech engine,
-     * shown on screen while parked. Otherwise the proposal is dropped and can never be confirmed.
+     * A confirmation question counts only once it was spoken to the end (audit #4). There is no
+     * screen-only delivery: setting the state does not prove the question was seen before an answer
+     * was captured (re-audit 3, #4). Without speech the proposal is dropped and says so.
      */
     private fun deliverConfirmation(
         turnEngine: TurnEngine,
         id: String,
         spoken: Boolean,
-        question: String,
     ) {
-        when {
-            spoken -> {
-                turnEngine.confirmationDelivered(id)
-            }
-
-            visible && drivingStateNow() == DrivingState.PARKED -> {
-                _state.update { it.copy(screen = ScreenContent.Text(question)) }
-                screenConfirmationId = id
-                turnEngine.confirmationDelivered(id)
-            }
-
-            else -> {
-                turnEngine.confirmationFailed(id)
-            }
+        if (spoken) {
+            turnEngine.confirmationDelivered(id)
+        } else {
+            turnEngine.confirmationFailed(id)
+            _state.update { it.copy(message = NOT_CONFIRMABLE) }
         }
     }
 
@@ -487,14 +481,15 @@ class AssistantViewModel(
         }
     }
 
-    private fun isEmulator(): Boolean =
-        Build.FINGERPRINT.contains("generic") ||
-            Build.FINGERPRINT.contains("emulator") ||
-            Build.HARDWARE == "ranchu" ||
-            Build.HARDWARE == "goldfish" ||
-            Build.PRODUCT.contains("sdk")
+    /**
+     * The Android emulator's virtual hardware. A fingerprint containing "generic" is not enough: an
+     * engineering image of real hardware can have one (re-audit 3, N5).
+     */
+    private fun isEmulator(): Boolean = Build.HARDWARE == "ranchu" || Build.HARDWARE == "goldfish"
 
     private companion object {
+        const val MIC_FAILED = "The microphone stopped. Please say it again."
+        const val NOT_CONFIRMABLE = "Voice output is unavailable, so I can't ask for a yes. Nothing was changed."
         const val TICK_MS = 200L
         const val GUARD_MS = 100L
         const val TAG = "earshot"

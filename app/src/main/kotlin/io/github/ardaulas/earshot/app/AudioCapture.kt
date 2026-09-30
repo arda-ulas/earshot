@@ -14,12 +14,16 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** One push-to-talk utterance: samples, when capture started and ended, and whether it hit the limit. */
+/**
+ * One push-to-talk utterance: samples, when capture started and ended, whether it hit the limit, and
+ * whether the microphone failed before key-up (then the samples are only a prefix and must not be used).
+ */
 class Captured(
     val pcm: FloatArray,
     val startMs: Long,
     val endMs: Long,
     val overflowed: Boolean,
+    val failed: Boolean = false,
 )
 
 /**
@@ -27,6 +31,8 @@ class Captured(
  * buffer). Each utterance is its own [Session] with its own buffer and reader, so an old reader can
  * never touch a new capture (re-audit #10). At the limit the reader stops and releases the recorder
  * itself and marks the overflow, so a long hold never turns old words into a fresh command (audit #9).
+ * A read error before key-up does the same and marks the utterance failed: a prefix is never passed on
+ * as a whole request (re-audit 3, N13).
  * The recorder is released exactly once, also on cancellation or lifecycle loss. Nothing is written to
  * storage, and buffers are cleared after use.
  */
@@ -42,6 +48,8 @@ class AudioCapture(
         @Volatile var length = 0
 
         @Volatile var limitReachedAtMs: Long? = null
+
+        @Volatile var failedAtMs: Long? = null
         var job: Job? = null
         private var released = false
 
@@ -80,20 +88,34 @@ class AudioCapture(
             return false
         }
         val s = Session(r, clock.millis())
-        r.startRecording()
+        try {
+            r.startRecording()
+        } catch (e: IllegalStateException) {
+            s.release()
+            return false
+        }
+        if (r.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+            s.release()
+            return false
+        }
         session = s
         s.job =
             scope.launch(Dispatchers.IO) {
                 try {
                     while (isActive && s.length < s.buffer.size) {
                         val n = r.read(s.buffer, s.length, minOf(CHUNK, s.buffer.size - s.length), AudioRecord.READ_BLOCKING)
-                        if (n <= 0) break
+                        if (n <= 0) {
+                            // An error, or the recorder stopped. After key-up that is the normal end;
+                            // before it, the utterance is incomplete (re-audit 3, N13).
+                            if (session === s) s.failedAtMs = clock.millis()
+                            break
+                        }
                         s.length += n
                     }
                     if (s.length >= s.buffer.size) s.limitReachedAtMs = clock.millis()
                 } finally {
-                    // At the limit (or on any exit) the microphone is let go at once, even if key-up never comes.
-                    if (s.limitReachedAtMs != null) s.release()
+                    // At the limit or on a failure the microphone is let go at once, even if key-up never comes.
+                    if (s.limitReachedAtMs != null || s.failedAtMs != null) s.release()
                 }
             }
         return true
@@ -113,7 +135,9 @@ class AudioCapture(
         val pcm = s.buffer.copyOf(s.length)
         s.buffer.fill(0f)
         val limit = s.limitReachedAtMs
-        return Captured(pcm, s.startMs, limit ?: releasedAt, overflowed = limit != null)
+        val failed = s.failedAtMs != null
+        if (failed) pcm.fill(0f)
+        return Captured(pcm, s.startMs, limit ?: s.failedAtMs ?: releasedAt, overflowed = limit != null, failed = failed)
     }
 
     /** Lifecycle loss (activity stopped, key-up never came): stop and release, keep nothing. */

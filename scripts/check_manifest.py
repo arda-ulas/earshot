@@ -26,6 +26,15 @@ COMPONENT_TAGS = ("activity", "activity-alias", "service", "receiver", "provider
 LAUNCHER = "io.github.ardaulas.earshot.app.MainActivity"
 
 
+def is_launcher(e):
+    for f in e.iter("intent-filter"):
+        actions = {a.get(ANDROID + "name") for a in f.iter("action")}
+        categories = {c.get(ANDROID + "name") for c in f.iter("category")}
+        if "android.intent.action.MAIN" in actions and "android.intent.category.LAUNCHER" in categories:
+            return True
+    return False
+
+
 def problems(path):
     root = ET.parse(path).getroot()
     out = []
@@ -39,7 +48,9 @@ def problems(path):
             name = e.get(ANDROID + "name", "")
             exported = e.get(ANDROID + "exported")
             has_filter = e.find("intent-filter") is not None
-            if name == LAUNCHER:
+            # Only the real launcher activity may be exported: an alias or other component that borrows
+            # its name is not exempt (re-audit 3, N15).
+            if tag == "activity" and name == LAUNCHER and is_launcher(e):
                 continue
             if exported == "true" or (has_filter and exported != "false"):
                 out.append(f"exports {tag} {name}")

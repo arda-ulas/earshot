@@ -61,7 +61,10 @@ class JsonlTraceWriter(
     private val retainFiles: Int = 7,
     /** Files older than this are deleted on every write (audit #18). */
     private val maxAgeMs: Long = 7L * 24 * 60 * 60 * 1000,
-    /** A file stops growing at this size; later turns of that day are not stored. */
+    /**
+     * No file grows past this size: a turn that would cross it is not stored, and [write] throws so
+     * the turn reports it (re-audit 3, N16).
+     */
     private val maxFileBytes: Long = 1_000_000,
     private val wallClockMs: () -> Long = System::currentTimeMillis,
 ) : TraceSink {
@@ -69,9 +72,18 @@ class JsonlTraceWriter(
     override fun write(trace: TurnTrace) {
         dir.mkdirs()
         val file = File(dir, "${fileKey()}.jsonl")
-        if (file.length() < maxFileBytes) {
-            file.appendText(json.encodeToString(TurnTrace.serializer(), trace) + "\n")
-        }
+        val line = (json.encodeToString(TurnTrace.serializer(), trace) + "\n").toByteArray()
+        if (file.length() + line.size > maxFileBytes) throw java.io.IOException("trace file full; this turn was not stored")
+        file.appendBytes(line)
+        purge()
+    }
+
+    /**
+     * Deletes files beyond [retainFiles] or older than [maxAgeMs]. Runs after every write; the app
+     * also calls it at start-up, so old traces go even if no turn follows.
+     */
+    @Synchronized
+    fun purge() {
         val now = wallClockMs()
         val files = dir.listFiles { f -> f.name.endsWith(".jsonl") }.orEmpty().sortedByDescending { it.name }
         val expired = files.drop(retainFiles) + files.filter { now - it.lastModified() > maxAgeMs }

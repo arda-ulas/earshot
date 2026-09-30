@@ -210,7 +210,7 @@ the maximum, 28 degrees.").
 | Vehicle read or write | 1 s, no retry; on the car API the wait stops but a started platform call is not interrupted, so the reply says the change could not be confirmed | `TurnConfig.writeTimeoutMs` |
 | Vehicle writes per turn | 1 | `TurnEngine` |
 | Spoken reply while moving | at most 12 words | `Policy.MAX_WORDS_WHILE_MOVING` |
-| Trace files | newest 7 kept, none older than 7 days, 1 MB per file | `JsonlTraceWriter` |
+| Trace files | newest 7 kept; files older than 7 days deleted after each write and at start-up; a turn that would take a file past 1 MB is not stored and the turn reports it | `JsonlTraceWriter` |
 
 The command values are checked when a `Command` is constructed. An out-of-range command cannot exist,
 so no later stage has to remember to check.
@@ -232,7 +232,9 @@ means the code path exists but has not been exercised.
 | Fault | Behaviour in the code | Evidence |
 |---|---|---|
 | Vehicle connection down | Driving state UNKNOWN once the last reading is older than 1 s -> moving rules; writes refused; "Vehicle controls are unavailable." | unit (SR-13), device M-11 |
-| Write rejected or timed out (1 s) | No retry; "I couldn't change the <thing>."; state re-read | unit (SR-14) |
+| Write rejected (1 s) | No retry; "I couldn't change the <thing>." | unit (SR-14) |
+| Write timed out (1 s) | No retry; "I couldn't confirm the change to the <thing>. Please check it.", because the platform call may still complete | unit (SR-14) |
+| Write reaches the gateway after the turn was cancelled or the driving state changed | Nothing written; "Driving changed, so I didn't do that." | unit (SR-8, re-audit 3 N12) |
 | No listed speech model passes (missing, wrong size or hash mismatch) | Assistant disabled with the reason on screen; no crash. If tiny.en fails and the optional base.en passes, base.en is used | unit (ModelGateTest), device M-14 |
 | Language model missing or hash mismatch | Fallback disabled; rules keep working; reason in developer panel | unit (ModelGateTest) |
 | Speech-to-text slower than 10 s / throws | Treated as unclear: re-prompt once, then stop | unit; seen on device (clip, not scripted) under host load |
@@ -367,19 +369,31 @@ parked. [10]
   checked on the emulator, not unit-tested). The developer panel and the debug build's recording
   caption hide transcripts, replies and climate values unless parked, which also covers Android
   Automotive's `UX_RESTRICTIONS_NO_VOICE_TRANSCRIPTION` flag. [12]
+- **App-level fixes without automated tests.** Capture overflow and microphone failure (the whole
+  utterance is refused), stopping parked-only speech when the car starts moving, confirmation only
+  after the question was spoken, teardown during inference, and cancellation during model loading
+  are implemented in `:app` and reviewed, but no automated test drives `AudioRecord`, text-to-speech
+  or the view-model lifecycle. Cancellation during model loading can still leave a loaded engine
+  unowned until the process ends (re-audit finding N9, not fixed).
+- **Debug clip player while driving.** Debug builds keep the clip player (clip file names and a
+  play button) visible under the platform's UX restrictions, as the test instrument for the moving
+  rows of the manual test plan. Release builds have no clip player.
 - **The single path to the vehicle is kept by review.** Today the main (non-test) sources have one
   call to `VehicleGateway.write`, in `TurnEngine`. No automated check enforces that.
 - **Simulated vehicle and emulator HAL.** On the phone, driving signals come from scripted scenarios.
   On the Android Automotive emulator they come from its vehicle HAL, set with test hooks. The value
   bounds are those of the simulated cabin; the emulator's fan range is not mapped to the 0-5 model.
 - **Car-service calls cannot be interrupted.** Timeouts stop waiting for a platform call, but a call
-  that has started runs to its end, so a timed-out write may still take effect; the reply says the
+  that has started runs to its end, so a timed-out write may still take effect (a write that has not
+  started yet checks the turn and the driving state first and does nothing if either changed); the reply says the
   change could not be confirmed. Driving signals are polled off the main thread; if polling stalls,
   the state ages to unknown, and a separate loop with no car calls removes parked-only output. The
   car connection and area discovery still run once on the main thread when the screen is created.
-- **How fresh "right before the write" is.** The re-check uses the resolver's latest reading, which is
-  at most 1 s old plus one 200 ms poll; on the car API a speed value may be up to 2 s old by the
-  vehicle's own timestamp when it is polled. The re-check is therefore about 3 s fresh at worst, not
+- **How fresh "right before the write" is.** The re-check, and the gateway's guard just before the
+  first effect, use the resolver's latest reading, not a new one. That reading is at most 1 s old;
+  on the car API it is stamped with the time the poll started, and its speed value may be up to 2 s
+  older by the vehicle's own timestamp (a value stamped in the future is refused). The gear value
+  carries no age check of its own. The state used is therefore up to about 3 s old, not
   instantaneous.
 - **Late re-prompts under host load.** whisper.cpp checks its abort flag only after the encoder
   finishes and after each decoder step, not during the encoder. On the arm64 API 36 emulator, with

@@ -6,5 +6,6 @@
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         </activity>
         <provider android:name="androidx.startup.InitializationProvider" android:exported="false" />
+        <activity-alias android:name="io.github.ardaulas.earshot.app.MainActivity" android:targetActivity="example.PrivateActivity" android:exported="true" />
     </application>
 </manifest>

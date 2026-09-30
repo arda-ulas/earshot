@@ -260,6 +260,14 @@ private fun DeveloperPanel(
     OutlinedCard(Modifier.fillMaxWidth(), colors = CardDefaults.outlinedCardColors()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Developer view", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            // Under the platform's UX restrictions the activity is distraction optimized: no test
+            // controls, model details or free text. Only a debug build keeps its clip player, the test
+            // instrument for the moving rows of the manual test plan (re-audit 3, N6).
+            if (state.uxRestricted == true && state.drivingState != DrivingState.PARKED) {
+                Text("Hidden while driving (platform UX restrictions).", style = MaterialTheme.typography.bodySmall)
+                if (state.clips.isNotEmpty()) ClipPicker(state.clips, enabled = state.phase == Phase.IDLE, onClip = onClip)
+                return@Column
+            }
             if (state.carApi) {
                 Text(
                     if (state.realClimateWrites) {

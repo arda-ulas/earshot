@@ -21,6 +21,17 @@ test clips unless stated otherwise. Nothing here has run in a vehicle.
     vocabulary; signed or fractional numbers are out of range, never rounded to a valid value; "3
     degrees warmer" is a change of 3, never a set-point. Refused requests never reach the language
     model.
+  - The vehicle gateway checks, right before the first effect, that the turn was not cancelled and
+    the driving state is unchanged; a queued car write that fails the check does nothing.
+  - One zone per request (front and rear together, or "the rear temperature", are refused); a
+    temperature unit on a fan command is refused; ".21" and "-twenty one" are out of range.
+  - Car samples are stamped with the time before the reads, and a future-dated speed is refused.
+  - A microphone error before key-up refuses the whole utterance; a confirmation question counts
+    only once spoken to the end (no screen-only delivery); parked-only speech is stopped on every
+    check while moving; the developer view is hidden under the platform's UX restrictions except for
+    the debug build's clip player; privileged climate writes need the emulator's virtual hardware.
+  - Traces: a hard 1 MB per file, expired files deleted at start-up as well, and a turn that could
+    not be stored says so.
   - A zero speed with no gear reading is unknown, not parked; a relative change from a temperature
     already outside 16-28 °C does nothing; a write whose wait timed out is reported as unconfirmed.
   - A spoken yes only confirms the pending question it answers, and only after the question was

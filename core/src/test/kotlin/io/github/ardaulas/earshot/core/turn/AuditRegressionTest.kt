@@ -27,9 +27,9 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 
 /**
- * Core-level reproductions of the hostile audit of v0.2.1 (2026-09-30) and of its re-audit. They cover
- * the scenarios that live in :core; app-level scenarios (capture, TTS, teardown) are checked on the
- * emulator and recorded in docs/manual-test-plan.md.
+ * Core-level reproductions of the hostile audit of v0.2.1 (2026-09-30) and of its re-audits. They cover
+ * the scenarios that live in :core. App-level fixes (capture failure and overflow, speech revocation,
+ * teardown) have no automated test; docs/safety.md lists them as known gaps.
  */
 class AuditRegressionTest {
     private class Rig(
