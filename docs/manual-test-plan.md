@@ -163,6 +163,14 @@ refused as expired twice: with the laptop loaded, the clip driver needed more th
 spoken question to select and play "yes". Timing logs from the passing run: question delivered at
 109.6 s (monotonic), answer at 119.1 s, acted.
 
+Re-run on 2026-10-01 at commit `9fc813c` (`clip`, same emulator, privileged install; clips requested
+through the debug build's token-checked launch intent, `scripts/drive-clips.py`): parked, A-3, U5, A-9
+(both) and A-7 (question, yes 6.5 s later, acted) pass; in `city`, A-4, A-6, A-7 (temperature 26.0 °C
+in all five seat areas afterwards), A-5 (speed) and the screen refusal pass. Under the platform's UX
+restrictions the developer view shows only "Hidden while driving". A clip request with a wrong token,
+and one with no token, started no turn and changed nothing. The car API connected in the background
+at start-up as intended.
+
 Speech-to-text on this AVD was 0.7–1.3 s per clip with the host quiet, and up to 7.8 s while the
 host was busy building (same laptop; not an in-vehicle figure). The phone emulator regression
 (M-rows) after the audit fixes is recorded separately below when run.
