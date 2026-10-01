@@ -292,8 +292,9 @@ What the code does:
   reading the value back. The 5 s deadline and the driving state are re-checked before each write,
   and again by the gateway just before the first effect, where a cancelled turn or a changed driving
   state stops it; the driving state used is the latest polled reading, not a new one. On the car API
-  the 1 s write timeout stops waiting; a write still queued then does not start, and the guard is
-  checked again before each seat area's platform call, but a call that has already started runs to
+  the 1 s write timeout stops waiting; a write still queued then does not start (checked against the
+  clock as well, since the timeout itself can fire late on a busy thread), and the guard is checked
+  again before each seat area's platform call, but a call that has already started runs to
   its end, so the reply says the change could not be confirmed (or only partly made).
 - Permissions: `RECORD_AUDIO`; on Android Automotive only, `CAR_SPEED`, `CAR_POWERTRAIN` and
   `CONTROL_CAR_CLIMATE` (the last granted only to the emulator's privileged install); AndroidX core's

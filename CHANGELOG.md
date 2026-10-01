@@ -56,6 +56,10 @@ test clips unless stated otherwise. Nothing here has run in a vehicle.
     overwritten by an older reading; the debug clip intent needs a token from the app's private
     files; a fan request with a cooling word and a colon between number words are refused; the
     out-of-range reply is short enough to be spoken while moving.
+  - A direction word with a fan level ("turn down the fan 4"), punctuation between number words
+    ("twenty, one"), a number followed by "to" or "for", "max" with the heat, and a deferral ("in a
+    bit") are refused; "turn the defrost back on" means the front defrost; the write guard also
+    checks the clock, since the timeout can fire late on a busy thread.
   - Traces: a hard 1 MB per file, expired files deleted at start-up as well, and a turn that could
     not be stored says so.
   - A zero speed with no gear reading is unknown, not parked; a relative change from a temperature

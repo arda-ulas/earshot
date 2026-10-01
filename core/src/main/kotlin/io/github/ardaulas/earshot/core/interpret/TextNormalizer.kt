@@ -96,6 +96,10 @@ object TextNormalizer {
                 .replace("/", " slash ")
                 // A colon left over ("twenty:one") is not understood either (re-audit 6, #2).
                 .replace(":", " $UNKNOWN_SYMBOL ")
+                // Punctuation between two number words ("twenty, one", "twenty (one)") keeps them
+                // apart, as "20, 1" stays apart: it never joins them into one number (pre-review of
+                // re-audit 7, #2).
+                .replace(Regex("""\b($NUMBER_WORDS)\s*[,"()]+[\s,"()]*(?=(?:$NUMBER_WORDS)\b)"""), "$1 $UNKNOWN_SYMBOL ")
                 .replace(Regex("""[.,!?;:"()]"""), " ")
                 .replace(Regex("""[^a-z0-9\s']"""), " $UNKNOWN_SYMBOL ")
                 .replace("'", "")

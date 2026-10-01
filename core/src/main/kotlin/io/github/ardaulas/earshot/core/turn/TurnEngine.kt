@@ -530,7 +530,12 @@ class TurnEngine(
                     // The timeout's own job: cancelled the moment the timeout fires (and with the
                     // turn), before this turn resumes, so that window is closed too (re-audit 6, N12, N22).
                     val waiting = currentCoroutineContext()[Job]
-                    val guard = { !abandoned.get() && waiting?.isActive != false && drivingState() == allowedIn }
+                    // The clock as well: the timeout itself is scheduled on the caller's thread and
+                    // fires late if that thread is busy (pre-review of re-audit 7, N12).
+                    val waitEndsMs = clock.millis() + config.writeTimeoutMs
+                    val guard = {
+                        !abandoned.get() && waiting?.isActive != false && clock.millis() <= waitEndsMs && drivingState() == allowedIn
+                    }
                     vehicle.write(property, value, a.deadlineMs, guard)
                 }
             } finally {

@@ -129,6 +129,28 @@ class RuleInterpreter {
                 RuleResult.Rejected("conflicting")
             }
 
+            // "max" belongs to the fan only ("turn up the heat to max" is not a step of 1).
+            FAN_MAX_WORD.containsMatchIn(t) && !isFan(actions.single()) -> {
+                RuleResult.Rejected("unused value")
+            }
+
+            // A direction with a fan level ("turn down the fan 4") is a change, not that level; and a
+            // direction with fan off is a second request (pre-review of re-audit 7, #1).
+            isFan(actions.single()) && (WARMER_WORD.containsMatchIn(t) || COOLER_WORD.containsMatchIn(t)) &&
+                !SET_TO.containsMatchIn(t) -> {
+                RuleResult.Rejected("unclear change")
+            }
+
+            // A number followed by "to", "too" or "for" may be a misheard "22" or "24".
+            NUMBER_THEN_HOMOPHONE.containsMatchIn(t) -> {
+                RuleResult.Rejected("unclear number")
+            }
+
+            // Later is not now ("turn off the defrost in a bit").
+            DEFERRAL.containsMatchIn(t) -> {
+                RuleResult.Rejected("deferred")
+            }
+
             // One target, one direction, one number: a second request must never vanish silently, and
             // a number must never be truncated to a valid one (pre-review F1, F2, F4).
             targets(t) > 1 -> {
@@ -177,6 +199,9 @@ class RuleInterpreter {
             }
         }
     }
+
+    private fun isFan(r: RuleResult): Boolean =
+        (r is RuleResult.Matched && r.command is Command.SetFan) || (r is RuleResult.OutOfRange && r.what == "fan speed")
 
     /** Commands whose value comes from a number in the utterance. */
     private fun usesNumber(r: RuleResult): Boolean =
@@ -289,7 +314,8 @@ class RuleInterpreter {
 
     private fun defrost(t: String): RuleResult? {
         if ("defrost" !in t || QUESTION.containsMatchIn(t)) return null
-        val window = if (t.containsAny(listOf("rear", "back"))) Window.REAR else Window.FRONT
+        // "back" names the rear window, but not in "turn it back on" (pre-review of re-audit 7).
+        val window = if (REAR.containsMatchIn(t)) Window.REAR else Window.FRONT
         // "defrost the windshield" has no on/off word but is plainly a request to turn it on.
         val on = onOff(t) ?: if (t.startsWith("defrost")) true else return null
         return RuleResult.Matched(Command.SetDefrost(window, on))
@@ -374,7 +400,10 @@ class RuleInterpreter {
         val COMMAND_VERB = Regex("""\b(set|turn|switch|make|put|change|raise|lower|increase|decrease|keep|get)\b""")
         val REPEATABLE = Regex("""\b(fan|defrost|ac|temperature|heat|on|off|up|down|warmer|cooler)\b""")
         val FRONT = Regex("""\bfront\b|(?<!rear |back )\bwindshield\b""")
-        val REAR = Regex("""\b(rear|back)\b""")
+        val REAR = Regex("""\brear\b|\bback\b(?!\s+(?:on|off)\b)""")
+        val NUMBER_THEN_HOMOPHONE = Regex("""\b\d+\s+(to|too|for)\b""")
+        val DEFERRAL =
+            Regex("""\b(later|soon|after|until|when|in a (bit|minute|moment|second|while)|for a (bit|minute|moment|while))\b""")
         val TEMP_UNIT = Regex("""\b(degrees?|celsius)\b""")
         val DEFROST_TARGET = Regex("""\bdefrost\b""")
 

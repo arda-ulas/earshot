@@ -661,4 +661,36 @@ class AuditRegressionTest {
     fun `re-audit 6 N28 - the out-of-range reply is short enough to be spoken while moving`() {
         (Responses.temperatureOutsideRange(30).split(" ").size <= Policy.MAX_WORDS_WHILE_MOVING) shouldBe true
     }
+
+    @Test
+    @Verifies("SR-1", "SR-3")
+    fun `pre-review of re-audit 7 - fan directions, joined number words, homophones, max on the heat and deferrals never act`() {
+        val rules = RuleInterpreter()
+        for (text in listOf(
+            "increase the fan 1",
+            "turn down the fan 4",
+            "raise the fan 2",
+            "lower fan speed 4",
+            "turn down the fan 1 level",
+            "fan off up",
+            "set the temperature to twenty, one",
+            "set the temperature to twenty, two degrees",
+            "set the temperature to twenty \"one\"",
+            "set the temperature to twenty (one)",
+            "set the temperature to twenty to",
+            "set the temperature to twenty for",
+            "turn up the heat to max",
+            "turn up the heat full",
+            "turn off the defrost in a bit",
+            "turn the fan off for a bit",
+        )) {
+            (rules.interpret(text) is RuleResult.Matched) shouldBe false
+        }
+        rules.interpret("turn the defrost back on") shouldBe
+            RuleResult.Matched(Command.SetDefrost(io.github.ardaulas.earshot.core.command.Window.FRONT, true))
+        rules.interpret("turn on the back defrost") shouldBe
+            RuleResult.Matched(Command.SetDefrost(io.github.ardaulas.earshot.core.command.Window.REAR, true))
+        rules.interpret("turn the fan to 3") shouldBe RuleResult.Matched(Command.SetFan(3))
+        rules.interpret("set the temperature to twenty one") shouldBe RuleResult.Matched(Command.SetTemp(21))
+    }
 }
