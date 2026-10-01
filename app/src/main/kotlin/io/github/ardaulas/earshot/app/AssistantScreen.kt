@@ -61,7 +61,8 @@ fun AssistantScreen(
     Scaffold { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             // Pinned above the scrolling content so it stays visible while the clip controls are used.
-            state.clipCaption?.let {
+            // Debug caption and developer details are hidden unless parked (re-audit N6).
+            state.clipCaption?.takeIf { state.parked }?.let {
                 Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp)) { RecordingCaption(it, state) }
             }
             AssistantContent(state, onPress, onRelease, viewModel)
@@ -154,7 +155,9 @@ private fun AssistantPanel(
     onPress: () -> Unit,
     onRelease: () -> Unit,
 ) {
-    val moving = state.drivingState.effective == DrivingState.MOVING
+    // Every assistant-output branch uses the same predicate: parked, and no active UX restriction
+    // (re-audit 8, N33).
+    val moving = !state.parked
     Card(Modifier.fillMaxWidth()) {
         Column(
             Modifier.fillMaxWidth().padding(20.dp),
@@ -168,7 +171,8 @@ private fun AssistantPanel(
 
                 is ModelStatus.Disabled -> {
                     Text("Assistant disabled", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
-                    Text(models.reason, textAlign = TextAlign.Center)
+                    // The reason is free text: only while parked, like every other detail.
+                    if (state.parked) Text(models.reason, textAlign = TextAlign.Center)
                 }
 
                 is ModelStatus.Ready -> {
@@ -213,10 +217,11 @@ private fun AssistantPanel(
                 Text(label, color = MaterialTheme.colorScheme.surface, textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold)
             }
             if (state.awaitingConfirmation) Text("Waiting for yes or no", fontWeight = FontWeight.SemiBold)
-            state.message?.let { Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center) }
+            state.message?.takeIf { state.parked }?.let { Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center) }
 
-            // Screen output exists only when the policy allowed it (parked). While moving: voice only.
-            when (val screen = state.screen) {
+            // Screen output exists only when the policy allowed it (parked), and is rendered only while
+            // still parked (re-audit #7).
+            when (val screen = state.screen?.takeIf { state.parked }) {
                 is ScreenContent.Text -> {
                     Text(screen.text, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
                 }
@@ -258,29 +263,59 @@ private fun DeveloperPanel(
     OutlinedCard(Modifier.fillMaxWidth(), colors = CardDefaults.outlinedCardColors()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Developer view", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(
-                "SIMULATED VEHICLE. This panel is a test tool, not part of the in-car interface.",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.error,
-            )
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DrivingScenario.ALL.forEach { s ->
-                    FilterChip(selected = state.scenario == s.name, onClick = { onScenario(s.name) }, label = { Text(s.name) })
-                }
+            // Under the platform's UX restrictions the activity is distraction optimized: no test
+            // controls, model details or free text. Only a debug build keeps its clip player, the test
+            // instrument for the moving rows of the manual test plan (re-audit 3, N6).
+            if (state.uxRestricted == true || (state.carApi && !state.parked)) {
+                // No controls at all while restricted; debug clip tests use the launch intent instead
+                // (re-audit 5, N6).
+                Text("Hidden while driving (platform UX restrictions).", style = MaterialTheme.typography.bodySmall)
+                return@Column
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Vehicle connection", Modifier.weight(1f))
-                Switch(checked = state.connected, onCheckedChange = onConnected)
+            if (state.carApi) {
+                Text(
+                    if (state.realClimateWrites) {
+                        "CAR API: real driving-state signals and climate writes (emulator vehicle HAL). Test tool, not in-car UI."
+                    } else {
+                        "CAR API: real driving-state signals; simulated climate writes. Test tool, not in-car UI."
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                val ux =
+                    when (state.uxRestricted) {
+                        true -> "required (voice only)"
+                        false -> "not required"
+                        null -> "unavailable"
+                    }
+                Text("Platform UX restrictions: $ux", style = MaterialTheme.typography.bodySmall)
+            } else {
+                Text(
+                    "SIMULATED VEHICLE. This panel is a test tool, not part of the in-car interface.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DrivingScenario.ALL.forEach { s ->
+                        FilterChip(selected = state.scenario == s.name, onClick = { onScenario(s.name) }, label = { Text(s.name) })
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Vehicle connection", Modifier.weight(1f))
+                    Switch(checked = state.connected, onCheckedChange = onConnected)
+                }
             }
             val speed = state.speedKmh?.let { String.format(Locale.US, "%.0f km/h", it) } ?: "no signal"
             Text("Signals: $speed, gear ${state.gear?.name?.lowercase() ?: "no signal"} → ${state.drivingState}")
-            ClimateValues(state.climate)
-            (state.models as? ModelStatus.Ready)?.let {
+            val parked = state.parked
+            // Climate values and the last turn (transcript, reply, timings) only while parked (re-audit N6).
+            if (parked) ClimateValues(state.climate) else Text("Details hidden while driving", style = MaterialTheme.typography.bodySmall)
+            (state.models as? ModelStatus.Ready)?.takeIf { parked }?.let {
                 Text("Speech model: ${it.speechModel}", style = MaterialTheme.typography.bodySmall)
                 it.lmNote?.let { note -> Text("Language model: $note", style = MaterialTheme.typography.bodySmall) }
             }
             if (state.clips.isNotEmpty()) ClipPicker(state.clips, enabled = state.phase == Phase.IDLE, onClip = onClip)
-            state.lastTrace?.let { LastTurn(it) }
+            if (parked) state.lastTrace?.let { LastTurn(it) }
         }
     }
 }

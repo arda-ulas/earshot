@@ -142,12 +142,12 @@ class RuleInterpreterTest {
     @Test
     fun `a question about the AC never acts on it`() {
         val result = interpreter.interpret("is the AC on?")
-        result shouldBe RuleResult.NoMatch
+        result shouldBe RuleResult.Rejected("question")
     }
 
     @Test
     fun `a question about the defrost never acts on it`() {
-        interpreter.interpret("is the defrost on?") shouldBe RuleResult.NoMatch
+        interpreter.interpret("is the defrost on?") shouldBe RuleResult.Rejected("question")
     }
 
     // --- Property-based tests -------------------------------------------------------------
@@ -259,6 +259,21 @@ class RuleInterpreterTest {
                     result shouldBe RuleResult.Matched(Command.SetTemp(n))
                 } else {
                     result shouldBe RuleResult.OutOfRange("temperature", Bounds.TEMP_C)
+                }
+            }
+        }
+
+    @Test
+    @Verifies("SR-3")
+    fun `signed and fractional temperatures are never turned into a valid different value`() =
+        runTest {
+            checkAll(Arb.int(-100, 100), Arb.int(0, 9)) { n, frac ->
+                for (text in listOf("set the temperature to -$n", "set the temperature to $n.$frac", "set the temperature to minus $n")) {
+                    val r = interpreter.interpret(text)
+                    if (r is RuleResult.Matched) {
+                        // Only a plain, unsigned, in-range whole number may match.
+                        (text == "set the temperature to $n" && n in 16..28) shouldBe true
+                    }
                 }
             }
         }

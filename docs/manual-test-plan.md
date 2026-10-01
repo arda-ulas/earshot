@@ -110,3 +110,74 @@ Findings during these runs, fixed before the results above:
   against the driver. It is now measured to the end of the answer, with a 10 s window.
 - Debug builds exported `androidx.compose.ui.tooling.PreviewActivity` (from `ui-tooling`). The
   dependency was removed, and the merged-manifest build check now enforces SR-20.
+
+## Android Automotive emulator (v0.3.0)
+
+Setup: AVD `earshot_aaos`, Android Automotive 15 image (`system-images;android-35-ext15;android-automotive;arm64-v8a`),
+6 GB RAM, started with `-writable-system`. The app is installed as a privileged app with
+`scripts/install-privileged.sh` (grants only `CONTROL_CAR_CLIMATE`); `CAR_SPEED` granted at the
+runtime prompt or with `pm grant`. Driving state is set through the emulator's vehicle HAL with
+`scripts/aaos-scenario.sh parked|city|stopped`. Turns are driven with `scripts/drive-clips.py`
+(synthetic clips). HAL values are read back with `adb shell cmd car_service get-property-value`.
+
+| ID | Scenario | Steps | Expected |
+|---|---|---|---|
+| A-1 | Car API reads | `parked`, then `city`, then `stopped` | Developer panel: 0 km/h park -> PARKED; 50 km/h drive -> MOVING; 0 km/h drive -> MOVING (ADR 0003) |
+| A-2 | UX restrictions | `city` | Platform UX restrictions "required"; assistant voice only |
+| A-3 | U1, real write | `parked`; "Set the temperature to 21" | `HVAC_TEMPERATURE_SET` becomes 21.0 in every seat area; reply read back from the car |
+| A-4 | U2 | `city`; "Turn on the front defrost" | `HVAC_DEFROSTER` front windshield TRUE; voice only |
+| A-5 | U3, U4 | `city`; speed question, "Show me my climate settings" | Speaks 50 km/h; refuses the screen with a summary read from the car |
+| A-6 | U9 | `city`; "Turn off the defrost", "yes" | Question spoken first; after yes, front defroster FALSE |
+| A-7 | U10 | `city`; "I'm freezing", "yes" | Language model `warmer`; question; after yes the car's temperature rises by 2 |
+| A-8 | Revocation (audit #7) | `parked`; "Show me my climate settings"; then `city` | Panel shown while parked; removed when moving |
+| A-9 | Audit #1, #2 | "Don't make it warmer"; "Set the temperature to minus 21" | Refused, language model not asked; valid range given |
+| A-10 | Offline voice (SR-25) | start the app | A local voice is selected (logcat `onIsValidVoiceName(...-local)`) |
+| A-11 | Signal lost | — | Not reproducible with this image's hooks for polled reads; covered by unit tests (SR-22) |
+
+### 2026-09-30, `earshot_aaos` on the same Apple silicon laptop, debug build (privileged install)
+
+| ID | Input | Result | Notes |
+|---|---|---|---|
+| A-1 | — | pass | All three states as expected |
+| A-2 | — | pass | "Platform UX restrictions: required (voice only)" at 50 km/h in drive |
+| A-3 | clip | pass | 17.0 -> 21.0 °C in ROW_1_LEFT, ROW_1_RIGHT, ROW_2_LEFT, ROW_2_RIGHT, ROW_2_CENTER; "Temperature is now 21 degrees." |
+| A-4 | clip | pass | FRONT_WINDSHIELD TRUE. An earlier run was discarded by SG-5 when host load pushed speech-to-text to 7.8 s |
+| A-5 | clip | pass | "You're going 50 kilometres per hour."; "I can't show that while driving. It's 23 degrees, fan 3." |
+| A-6 | clip | pass | After the fixes for audit #3/#4: yes accepted after the question was spoken; FRONT_WINDSHIELD FALSE |
+| A-7 | clip | pass | `{"intent":"warmer"}` -> "Raise the temperature by 2 degrees?" -> yes -> 21.0 -> 23.0 °C in the car |
+| A-8 | clip | pass | Screenshots: panel with car values while parked; gone, "Voice only while driving" after `city` |
+| A-9 | clip | pass | "Sorry, I can't help with that." (no language-model stage in the trace); "I can only set the temperature from 16 to 28." |
+| A-10 | — | pass | `en-us-x-tpf-local` |
+| A-11 | — | not run | See above |
+
+Re-run on 2026-09-30 after the last interpreter and driving-state fixes (`clip`, same emulator): A-3
+("Set the temperature to 21", acted), U5 ("Make it warmer", acted), A-9 (both refused), A-6 (defrost
+off, confirmed, acted) and A-7 (parked and moving: question, yes, acted) pass. An earlier attempt at
+A-7 was refused as expired: the clip driver took 25 s to select the answer clip, past the 10 s answer
+window, which is the intended behaviour; the driver now selects it while the question turn runs.
+
+Re-run on 2026-09-30 after the fixes for the third and fourth re-audits (`clip`, same emulator):
+parked, A-3, U5 and A-9 (both) pass; in `city`, A-4, A-6 and A-5 (speed) pass, and the developer view
+shows only "Hidden while driving" and a numbered clip player. A-7 in `city` passed once and was
+refused as expired twice: with the laptop loaded, the clip driver needed more than 10 s after the
+spoken question to select and play "yes". Timing logs from the passing run: question delivered at
+109.6 s (monotonic), answer at 119.1 s, acted.
+
+Re-run on 2026-10-01 at commit `9fc813c` (`clip`, same emulator, privileged install; clips requested
+through the debug build's token-checked launch intent, `scripts/drive-clips.py`): parked, A-3, U5, A-9
+(both) and A-7 (question, yes 6.5 s later, acted) pass; in `city`, A-4, A-6, A-7 (temperature 26.0 °C
+in all five seat areas afterwards), A-5 (speed) and the screen refusal pass. Under the platform's UX
+restrictions the developer view shows only "Hidden while driving". A clip request with a wrong token,
+and one with no token, started no turn and changed nothing. The car API connected in the background
+at start-up as intended.
+
+Capture path check on 2026-10-01 (same emulator, host audio input, nobody speaking, so this is not a
+`mic` voice result): the push-to-talk button was held by an injected touch for 2.5 s and for 0.9 s.
+Both captures reached the turn engine as `MIC` turns with an empty transcript and were answered with
+the re-prompt and then the stop message; neither was refused as a microphone failure. This checks
+that the capture-failure rules do not reject an ordinary press and release; it says nothing about
+recognising a voice.
+
+Speech-to-text on this AVD was 0.7–1.3 s per clip with the host quiet, and up to 7.8 s while the
+host was busy building (same laptop; not an in-vehicle figure). The phone emulator regression
+(M-rows) after the audit fixes is recorded separately below when run.

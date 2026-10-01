@@ -52,7 +52,8 @@ int main(int argc, char **argv) {
         if (role == "assistant_prefix") apfx = content; else msgs.push_back({role, content}); }
     std::stringstream gs; gs << std::ifstream(argv[3]).rdbuf(); std::string grammar = gs.str();
     std::string prefix = fmt(model, msgs, false);
-    auto ptoks = tok(vocab, prefix, true); decode_all(ctx, ptoks);
+    auto ptoks = tok(vocab, prefix, true);
+    if (!decode_all(ctx, ptoks)) { fprintf(stderr, "prefix decode failed\n"); return 5; }
     int n_prefix = ptoks.size();
     fprintf(stderr, "prefix tokens: %d\n", n_prefix);
     std::string user;
@@ -62,13 +63,14 @@ int main(int argc, char **argv) {
         if (full.rfind(prefix, 0) != 0) { fprintf(stderr, "prefix mismatch\n"); return 3; }
         std::string suffix = full.substr(prefix.size());
         llama_memory_seq_rm(llama_get_memory(ctx), 0, n_prefix, -1);
-        auto st = tok(vocab, suffix, false); decode_all(ctx, st);
+        auto st = tok(vocab, suffix, false);
+        if (!decode_all(ctx, st)) { fprintf(stderr, "prompt decode failed\n"); return 5; }
         auto *chain = llama_sampler_chain_init(llama_sampler_chain_default_params());
         auto *g = llama_sampler_init_grammar(vocab, grammar.c_str(), "root");
         if (!g) { fprintf(stderr, "grammar failed\n"); return 4; }
         llama_sampler_chain_add(chain, g); llama_sampler_chain_add(chain, llama_sampler_init_greedy());
         std::string out;
-        for (int i = 0; i < 40; ++i) {
+        for (int i = 0; i < 16; ++i) {  // same cap as LmWireFormat.MAX_TOKENS
             llama_token t = llama_sampler_sample(chain, ctx, -1);
             if (llama_vocab_is_eog(vocab, t)) break;
             char p[256]; int n = llama_token_to_piece(vocab, t, p, sizeof p, 0, true); out.append(p, n);

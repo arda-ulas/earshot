@@ -11,8 +11,9 @@ Security threats are in [threat-model.md](threat-model.md). Requirements are in
 ## Scope and honesty boundary
 
 Earshot is a hobby project. It is push-to-talk voice control for a car's cabin climate, and it runs on
-the Android phone emulator (API 36, arm64) against a simulated vehicle. Phase 1 does not use the
-Android Automotive emulator yet. It has not run in a vehicle and it has no users.
+the Android phone emulator (API 36, arm64) against a simulated vehicle and, since v0.3.0, on the
+Android Automotive emulator (Android 15) through the public car API, with climate writes to the
+emulator's vehicle HAL from a privileged test install. It has not run in a vehicle and it has no users.
 
 The project borrows a few practices from automotive safety work, scaled to a one-person project:
 
@@ -134,7 +135,7 @@ Precedence in the policy, first match wins:
 | Comfort | set or adjust temperature, AC on or off, defrost on, fan (except the case below) | Allow | AllowVoiceOnly |
 | Query | speed, gear, cabin settings | Allow | AllowVoiceOnly |
 | Conversation | help, yes or no with a confirmation pending | Allow | AllowVoiceOnly |
-| Visibility-reducing | defrost off; fan off while the front defrost is on or unreadable | Allow | Confirm |
+| Visibility-reducing | defrost off; fan off (the turn engine treats the front defrost as on: it does not read it, since a reading can change before the write) | Allow | Confirm |
 | Screen-dependent | show the climate panel | Allow | Refuse, with a short spoken summary |
 | Out of domain | anything else | Refuse | Refuse |
 
@@ -161,7 +162,8 @@ The simulated vehicle also rejects values outside each property's range.
 |---|---|
 | Driving signals: none received, or the latest is older than 1 s | `UNKNOWN`, handled as moving |
 | Gear in drive or reverse at a standstill | moving |
-| Neutral or no gear, speed zero | moving for the first 2 s, then parked; unknown if the speed is missing |
+| Neutral, speed zero | moving for the first 2 s, then parked; unknown if the speed is missing |
+| No gear reading, speed zero | unknown (handled as moving) |
 | Speech-to-text confidence (timeout, error, no value) | too low: re-prompt once, then stop |
 | Front defrost state (could not be read) | on, so fan off counts as visibility-reducing |
 | Vehicle connection | down: writes refused, "Vehicle controls are unavailable." |
@@ -170,8 +172,10 @@ The simulated vehicle also rejects values outside each property's range.
 
 ### One action per turn
 
-A turn performs at most one vehicle write (SR-16). A failed or timed-out write is reported by voice
-and is not retried (SR-14).
+A turn performs at most one vehicle write request (SR-16). A failed or timed-out write is reported by
+voice and is not retried (SR-14). On the car API one request writes every seat area of the single
+zone, checking the turn and the driving state before each area; if some areas change and others do
+not, the reply says only part of the change was made.
 
 ### Confirm from the read-back
 
@@ -201,12 +205,12 @@ the maximum, 28 degrees.").
 | Language-model input | 200 characters | `LmInterpreter.MAX_INPUT_CHARS` |
 | Language-model output | 16 tokens; the grammar allows only one of 10 labels | `LmWireFormat` |
 | Language-model time | 10 s | `LmInterpreter.DEFAULT_TIMEOUT_MS` |
-| Action start | within 5 s of the end of the utterance, else discarded | `TurnConfig.actionBudgetMs` |
-| Confirmation window | 10 s, measured to the end of the answer | `TurnConfig.confirmationTtlMs` |
-| Vehicle read or write | 1 s, no retry | `TurnConfig.writeTimeoutMs` |
+| Action start | the write must start within 5 s of the end of the utterance, checked immediately before it (and on the car API before the first platform write), else discarded | `TurnConfig.actionBudgetMs`, `CarPropertyGateway.write` |
+| Confirmation window | 10 s from delivery of the question; the answer must start after delivery | `TurnConfig.confirmationTtlMs` |
+| Vehicle read or write | 1 s, no retry; on the car API the wait stops but a started platform call is not interrupted, so the reply says the change could not be confirmed | `TurnConfig.writeTimeoutMs` |
 | Vehicle writes per turn | 1 | `TurnEngine` |
 | Spoken reply while moving | at most 12 words | `Policy.MAX_WORDS_WHILE_MOVING` |
-| Trace files | newest 7 kept | `JsonlTraceWriter` |
+| Trace files | newest 7 kept; files older than 7 days deleted after each write and at start-up; a turn that would take a file past 1 MB is not stored and the turn reports it | `JsonlTraceWriter` |
 
 The command values are checked when a `Command` is constructed. An out-of-range command cannot exist,
 so no later stage has to remember to check.
@@ -228,7 +232,9 @@ means the code path exists but has not been exercised.
 | Fault | Behaviour in the code | Evidence |
 |---|---|---|
 | Vehicle connection down | Driving state UNKNOWN once the last reading is older than 1 s -> moving rules; writes refused; "Vehicle controls are unavailable." | unit (SR-13), device M-11 |
-| Write rejected or timed out (1 s) | No retry; "I couldn't change the <thing>."; state re-read | unit (SR-14) |
+| Write rejected (1 s) | No retry; "I couldn't change the <thing>." | unit (SR-14) |
+| Write timed out (1 s) | No retry; "I couldn't confirm the change to the <thing>. Please check it.", because the platform call may still complete | unit (SR-14) |
+| Write reaches the gateway after the turn was cancelled or the driving state changed | Nothing written; "Driving changed, so I didn't do that." | unit (SR-8, re-audit 3 N12) |
 | No listed speech model passes (missing, wrong size or hash mismatch) | Assistant disabled with the reason on screen; no crash. If tiny.en fails and the optional base.en passes, base.en is used | unit (ModelGateTest), device M-14 |
 | Language model missing or hash mismatch | Fallback disabled; rules keep working; reason in developer panel | unit (ModelGateTest) |
 | Speech-to-text slower than 10 s / throws | Treated as unclear: re-prompt once, then stop | unit; seen on device (clip, not scripted) under host load |
@@ -253,8 +259,8 @@ Notes on the table:
 ### What Earshot does
 
 - While the driving state is moving or unknown, results are voice only. The turn result carries no
-  screen content (SR-4). A result already shown while parked is not cleared when the vehicle starts
-  moving (see Known gaps).
+  screen content (SR-4). A result shown while parked is not rendered once the state stops being
+  parked, and a long parked reply is stopped.
 - Screen-dependent requests are refused while moving, with a short spoken summary instead: "I can't
   show that while driving. It's 21 degrees, fan 2." (SR-4; M-4 on clips).
 - Replies spoken while moving are at most 12 words. A unit test checks the reply templates the engine
@@ -286,12 +292,12 @@ guidelines for built-in, visual-manual interfaces in light vehicles. [8] [9]
 Earshot does not measure glances and has not been tested with either NHTSA protocol. Its own rule is
 simpler: a turn decided while moving or unknown puts nothing on screen, and screen-dependent requests
 are refused by voice. The single screen is not blank while moving. Status text and the developer
-panel still show, and a result shown while parked stays until the next turn (see Known gaps).
+panel still show; a result shown while parked is removed when the car starts moving (see Known gaps).
 Its choice to treat drive or reverse at a standstill as moving points the same way as NHTSA's
 definition of driving, although Earshot has no propulsion signal. Its neutral-at-standstill rule
 (parked after 2 s) is looser than NHTSA's definition.
 
-### Background: Android Automotive UX restrictions (not integrated yet)
+### Android Automotive UX restrictions (integrated in v0.3.0)
 
 In Android Automotive OS, the car service turns gear and speed into a driving state (parked, idling or
 moving). A configuration chosen by the vehicle maker turns that state into UX restrictions, which can
@@ -299,16 +305,17 @@ differ by market and by display. Apps are expected to read restrictions from `Ca
 rather than infer them from gear or speed. Only activities tagged as distraction optimized may be shown
 while restrictions are active. [10] [11] [12] [13]
 
-Earshot is not an Android Automotive OS app yet. It does not use the `android.car` APIs
-(`CarUxRestrictionsManager` or `CarDrivingStateManager`), marks no activity as distraction optimized,
-and has not been assessed against any driver-distraction guideline. It works out its own state
-(parked, moving or unknown) from simulated gear and speed. It has no idling state: drive or reverse at
-a standstill counts as moving. It treats a missing or stale reading as moving. The platform does the
-opposite before its first driving-state data arrives: its documentation says restrictions are not
-enforced then, and the system behaves as if parked. [10]
-
-Reading real driving state and UX restrictions through the Car API is planned for a later phase, on
-the Android Automotive emulator.
+Since v0.3.0, on Android Automotive, Earshot reads speed and gear through `CarPropertyManager` and the
+platform's restrictions through `CarUxRestrictionsManager`, and the stricter of the platform's answer
+and its own wins (ADR 0007): if restrictions are required the assistant behaves as moving, and if the
+restrictions service cannot be registered, restrictions are assumed. It does not use
+`CarDrivingStateManager`. Its main activity is marked distraction optimized; while not parked it shows
+only the push-to-talk control, status text and the developer view's test controls, with climate
+values, transcripts and replies hidden. It has not been assessed against any driver-distraction
+guideline. It has no idling state: drive or reverse at a standstill counts as moving, and a missing or
+stale reading counts as moving. The platform does the opposite before its first driving-state data
+arrives: its documentation says restrictions are not enforced then, and the system behaves as if
+parked. [10]
 
 ## Verification
 
@@ -357,25 +364,55 @@ the Android Automotive emulator.
   manual test plan, on clips.
 - **The screen rule covers assistant output only.** SR-4 applies to the result content of a turn. The
   single screen still shows status text while moving, such as "Voice only while driving" and "Waiting
-  for yes or no". A result shown while parked (text or the climate panel) stays on screen after the
-  vehicle starts moving, until the next turn finishes; nothing clears it on a change of driving
-  state. The developer panel, a test tool for the simulated vehicle, shows the last transcript and
-  reply in every driving state. The debug build's recording caption shows the clip's scripted text
-  and the reply in every driving state. Android Automotive's `UX_RESTRICTIONS_NO_VOICE_TRANSCRIPTION`
-  flag forbids showing voice transcriptions while restricted. [12] The panel would need to respect it
-  once the Car API is integrated.
+  for yes or no". Since v0.3.0 a result shown while parked (text or the climate panel) is removed
+  when the driving state stops being parked, and a long parked reply is stopped (app behaviour,
+  checked on the emulator, not unit-tested). The developer panel and the debug build's recording
+  caption hide transcripts, replies and climate values unless parked, which also covers Android
+  Automotive's `UX_RESTRICTIONS_NO_VOICE_TRANSCRIPTION` flag. [12]
+- **App-level fixes without automated tests.** Capture overflow and microphone failure (the whole
+  utterance is refused; a read that ends early is detected from an error code, from the recorder no
+  longer recording at key-up, from an empty read that began more than 150 ms before key-up, or from
+  samples missing against the time held, so what stays undetected is a gap under about 150 ms while
+  the recorder still reports recording), stopping parked-only speech when the car starts moving, confirmation only
+  after the question was spoken, teardown during inference, and cancellation during model loading
+  are implemented in `:app` and reviewed, but no automated test drives `AudioRecord`, text-to-speech
+  or the view-model lifecycle. Cancellation during model loading can still leave a loaded engine
+  unowned until the process ends (re-audit finding N9, not fixed).
+- **Debug clip hook.** Under the platform's UX restrictions the screen has no test controls at all.
+  Debug builds instead accept a clip name in the launch intent (`--es earshot.debug.clip NAME`, used
+  by `scripts/drive-clips.py`), but only with a random token from the app's private files, which
+  another app cannot read and `adb shell run-as` can on the debuggable build. Only a file already in
+  the app's clip folder can be played. Release builds have neither the clip player nor the hook.
 - **The single path to the vehicle is kept by review.** Today the main (non-test) sources have one
   call to `VehicleGateway.write`, in `TurnEngine`. No automated check enforces that.
-- **Simulated vehicle.** Driving signals come from scripted scenarios. The value bounds are those of
-  the simulated cabin; the real property ranges are to be checked on the Android Automotive emulator
-  in a later phase.
+- **Simulated vehicle and emulator HAL.** On the phone, driving signals come from scripted scenarios.
+  On the Android Automotive emulator they come from its vehicle HAL, set with test hooks. The value
+  bounds are those of the simulated cabin; the emulator's fan range is not mapped to the 0-5 model.
+- **Car-service calls cannot be interrupted.** Timeouts stop waiting for a platform call, but a call
+  that has started runs to its end, so a timed-out write may still take effect. A write that has not
+  started yet, and each further seat area of a write in progress, checks first that the turn is
+  still waiting and that the driving state is unchanged, and stops otherwise; the reply says the
+  change could not be confirmed, or was only partly made. Driving signals are polled off the main thread; if polling stalls,
+  the state ages to unknown, and a separate loop with no car calls removes parked-only output. The
+  car connection and area discovery run off the main thread; until they finish, the vehicle reads
+  as unavailable and the driving state as unknown.
+- **How fresh "right before the write" is.** The re-check, and the gateway's guard just before the
+  first effect, use the resolver's latest reading, not a new one. That reading is at most 1 s old; on
+  the car API it is stamped with the time the poll started, and its speed value may be up to 2 s older
+  by the vehicle's own timestamp (a value stamped in the future is refused). The gear value has no
+  age check: it is an on-change property, whose timestamp is when the gear last changed, so an old
+  timestamp is normal and a stale value cannot be told apart. Parked needs park (or neutral held at zero speed for 2 s), no active UX restriction, and a fresh zero
+  speed, so a stale park value with a moving car still reads as moving; a stale park value with a car
+  stopped in drive would read as parked.
 - **Late re-prompts under host load.** whisper.cpp checks its abort flag only after the encoder
   finishes and after each decoder step, not during the encoder. On the arm64 API 36 emulator, with
   the Apple silicon laptop heavily loaded (load average about 20), an aborted speech-to-text call
   took up to about 20 s to return, so the re-prompt came late. No action ran: the transcript was
   empty.
 - **Language-model misreads remain.** On the held-out set, "good morning" became a gear query and "it's
-  muggy" became cooler. The confirmation question is the control, not the model's accuracy.
+  muggy" became cooler. On the harness's synthetic clips (host build, `clip`), misheard noisy
+  versions of "it's really stuffy in here" became warmer, the opposite direction; the correct
+  transcript now gives out of domain, after trailing punctuation is stripped before the model. The confirmation question is the control, not the model's accuracy.
 - **A short hazard list.** The eight hazards come from the author's project plan, which is not in this
   repository. There is no exposure or
   controllability rating, no systematic search for situations where the function, working as built, is

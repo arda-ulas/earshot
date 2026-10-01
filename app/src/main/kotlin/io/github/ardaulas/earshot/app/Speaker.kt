@@ -27,15 +27,42 @@ class Speaker(
             _available.value = status == TextToSpeech.SUCCESS && configure()
         }
 
+    /** Name of the offline voice in use, for the developer panel; null when none. */
+    var voiceName: String? = null
+        private set
+
     private fun configure(): Boolean {
         val lang = tts.setLanguage(Locale.US)
         if (lang == TextToSpeech.LANG_MISSING_DATA || lang == TextToSpeech.LANG_NOT_SUPPORTED) return false
+        // Offline only (audit #11): pick an installed English voice that needs no network, or fail
+        // closed. Without INTERNET the app itself cannot send anything, but a network voice would run
+        // in the speech engine's process under its own permissions.
+        val offline =
+            runCatching { tts.voices }
+                .getOrNull()
+                .orEmpty()
+                .filter { v ->
+                    v.locale.language == "en" &&
+                        !v.isNetworkConnectionRequired &&
+                        TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED !in v.features.orEmpty() &&
+                        TextToSpeech.Engine.KEY_FEATURE_NETWORK_SYNTHESIS !in v.features.orEmpty()
+                }.sortedWith(compareBy({ it.locale != Locale.US }, { it.quality * -1 }))
+        val voice = offline.firstOrNull() ?: return false
+        if (tts.setVoice(voice) != TextToSpeech.SUCCESS || tts.voice?.isNetworkConnectionRequired != false) return false
+        voiceName = voice.name
         tts.setOnUtteranceProgressListener(
             object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String) = Unit
 
                 override fun onDone(utteranceId: String) {
                     waiting.remove(utteranceId)?.invoke(true)
+                }
+
+                override fun onStop(
+                    utteranceId: String,
+                    interrupted: Boolean,
+                ) {
+                    waiting.remove(utteranceId)?.invoke(false)
                 }
 
                 @Deprecated("Deprecated in Java")
@@ -59,15 +86,33 @@ class Speaker(
         if (_available.value != true) return false
         val id = UUID.randomUUID().toString()
         return suspendCancellableCoroutine { cont ->
-            waiting[id] = { ok -> if (cont.isActive) cont.resume(ok) }
+            // Registering the waiter and starting the utterance happen under the same lock as stop(),
+            // so a stop can never answer this waiter and then let its utterance start (re-audit 4,
+            // N14). A stop that comes first finds nothing to stop; the caller's guard, which keeps
+            // stopping parked-only speech while the car is not parked, stops the utterance next.
+            val started =
+                synchronized(lock) {
+                    waiting[id] = { ok -> if (cont.isActive) cont.resume(ok) }
+                    tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id) == TextToSpeech.SUCCESS
+                }
             cont.invokeOnCancellation {
                 waiting.remove(id)
-                tts.stop()
+                synchronized(lock) { runCatching { tts.stop() } }
             }
-            if (tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id) != TextToSpeech.SUCCESS) {
+            if (!started) {
                 waiting.remove(id)
-                cont.resume(false)
+                if (cont.isActive) cont.resume(false)
             }
+        }
+    }
+
+    private val lock = Any()
+
+    /** Stops the current utterance; its speak() call returns false. */
+    fun stop() {
+        synchronized(lock) {
+            runCatching { tts.stop() }
+            waiting.keys.toList().forEach { id -> waiting.remove(id)?.invoke(false) }
         }
     }
 

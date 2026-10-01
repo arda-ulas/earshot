@@ -198,3 +198,54 @@ how.
   it leads to.
 - **Verified:** the reviewers checked the documents against the brief, the code and the fact-check
   list. CI on the pull request: pending.
+
+## 2026-09-30
+
+### Android Automotive and the car API (builder)
+- **Asked:** run the app on the Android Automotive emulator, read speed and gear through the car API,
+  honour the platform's UX restrictions, and try real climate writes within a 2 h timebox (simulated
+  otherwise), keeping `:core` free of Android imports.
+- **Produced:** the `:vehicle:car` module (`CarPropertyGateway`, signal mapping, a fake car for JVM
+  tests), app wiring, manifest entries, ADRs 0006 and 0007, the emulator scripts
+  (`aaos-scenario.sh`, `install-privileged.sh`, `drive-clips.py`) and manual test rows A-1 to A-11.
+- **Changed:** permission protection levels, property ids and area ids were read from the emulator
+  image and the SDK stub rather than assumed; the first gear hook (`car_service set-property-value`)
+  did not work and was replaced by the vehicle HAL's debug `--set`; speed injection was overwritten
+  by the emulator and replaced by the HAL's fake-data generator. The privileged install was narrowed
+  to one permission and later to emulators only.
+- **Verified:** unit tests on a fake car; on the emulator, climate values read with
+  `dumpsys` on the vehicle HAL before and after each command (A-3 to A-7), and the permission grant
+  read from `dumpsys package`.
+
+### Hostile review of v0.2.1 and fixes (external review, builder)
+- **Asked:** the author supplied an external hostile review of v0.2.1 made with another AI tool
+  (15 P1, 8 P2) and asked for every P1 to be fixed with a regression test that reproduces it, then a
+  hostile re-review before tagging.
+- **Produced:** two rounds of fixes (interpretation, confirmation, driving state and deadline,
+  capture, native close, model storage, traces, manifest check), each P1 with a named regression
+  test; corrected requirements, safety notes, threat model and README.
+- **Changed:** the first round was re-reviewed by the same external tool and judged partial for
+  seven findings, with new findings in the Automotive code (for example park gear with a NaN speed
+  resolving to parked, and a curly apostrophe bypassing the negation check). The second round
+  addressed those. Where a finding could not be fixed in code (signal loss on the Automotive
+  emulator), the docs say so instead.
+- **Verified:** each regression test drives the scenario named in the review (input text, signal
+  timeline or call sequence) through the real classes, with fakes only at the edges; `:core`, `:vehicle:car` and the manifest-check tests green locally; the Automotive rows re-run on
+  the emulator after the second round. The final re-review result is recorded in the release notes.
+
+### Regression harness (workflow and agents)
+- **Asked:** build the Phase 2 harness: a CLI reusing `:core`, a labelled car test set with synthetic
+  voices and generated noise, host builds of the pinned engines, metrics, a CI gate (policy 100%, no
+  false actions) and a committed report.
+- **Produced:** a Claude workflow (builder, integrator, two adversarial reviewers, fixer) and then
+  a single agent produced the `:harness` module, the test set, host engines, baseline, report and CI
+  job, in a separate worktree.
+- **Changed:** the reviewers found that low-confidence decisions were never scored (a policy that
+  acted on unclear speech would have passed) and that the policy gate could pass with nothing
+  scored; both fixed with tests. Labels were rewritten twice as the core changed. The harness's own
+  findings led to core fixes (language-model input punctuation, unsupported features and negated
+  requests reaching the model); the harness did not edit core. The author's builder session reviewed
+  the diff, checked it for banned names and binaries, and re-ran the text gate on the final core.
+- **Verified:** `:harness:check`, the reference run and `compare` on the release branch; the audio
+  runs (about 25 minutes on the host) were run by the agent on the core before the last three-word
+  rule change, and the report says so.

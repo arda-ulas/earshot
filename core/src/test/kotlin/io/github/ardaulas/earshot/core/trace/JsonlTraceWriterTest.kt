@@ -65,4 +65,30 @@ class JsonlTraceWriterTest {
                 .toSet()
         remaining shouldBe setOf("d3", "d4")
     }
+
+    @Test
+    fun `old files are deleted by age, and no file ever passes its byte limit (re-audit 3, N16)`(
+        @org.junit.jupiter.api.io.TempDir dir: java.io.File,
+    ) {
+        val old = java.io.File(dir, "2000-01-01.jsonl").apply { writeText("x\n") }
+        old.setLastModified(0)
+        val oneLine = (JsonlTraceWriter.json.encodeToString(TurnTrace.serializer(), trace()) + "\n").toByteArray().size
+        val limit = oneLine + oneLine / 2L
+        val writer = JsonlTraceWriter(dir, { "2026-09-30" }, maxFileBytes = limit, wallClockMs = { 30L * 24 * 60 * 60 * 1000 })
+        writer.write(trace())
+        old.exists() shouldBe false
+        io.kotest.assertions.throwables
+            .shouldThrow<java.io.IOException> { writer.write(trace()) }
+        (java.io.File(dir, "2026-09-30.jsonl").length() <= limit) shouldBe true
+    }
+
+    @Test
+    fun `purge alone removes expired files, with no turn written`(
+        @org.junit.jupiter.api.io.TempDir dir: java.io.File,
+    ) {
+        val old = java.io.File(dir, "2000-01-01.jsonl").apply { writeText("x\n") }
+        old.setLastModified(0)
+        JsonlTraceWriter(dir, { "2026-09-30" }, wallClockMs = { 30L * 24 * 60 * 60 * 1000 }).purge()
+        old.exists() shouldBe false
+    }
 }

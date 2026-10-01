@@ -36,3 +36,14 @@ keystore.properties
 docs/lm-eval/lmhost/build/
 docs/lm-eval/results/*.spec
 docs/lm-eval/results/*.gbnf
+
+# Host engine builds for the regression harness (scripts/build-host-engines.sh)
+tools/host/build/
+
+# Test-set audio and noise are generated locally (scripts/make-testset.sh, scripts/record-clips.sh)
+testset/*/audio/
+testset/*/noise/
+
+# Harness reports (./gradlew :harness:run ... --out reports/<name>)
+reports/
+__pycache__/

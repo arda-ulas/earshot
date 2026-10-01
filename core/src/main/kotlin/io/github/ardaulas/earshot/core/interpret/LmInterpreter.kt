@@ -31,6 +31,18 @@ class LmInterpreter(
     private val engine: LmEngine,
     private val timeoutMs: Long = DEFAULT_TIMEOUT_MS,
 ) {
+    /**
+     * The model was tuned and evaluated on phrases without trailing punctuation; whisper adds a full
+     * stop, and that alone flipped "It's really stuffy in here" from out of domain to warmer (harness
+     * finding). Strip it and collapse whitespace; the words and their case are kept.
+     */
+    internal fun forModel(transcript: String): String =
+        transcript
+            .trim()
+            .trimEnd('.', '!', '?', ',', ';', ':', ' ')
+            .replace(Regex("""\s+"""), " ")
+            .take(MAX_INPUT_CHARS)
+
     suspend fun interpret(transcript: String): LmOutcome =
         try {
             val raw =
@@ -38,7 +50,7 @@ class LmInterpreter(
                     engine.complete(
                         system = LmWireFormat.SYSTEM_PROMPT,
                         examples = LmWireFormat.EXAMPLES,
-                        user = transcript.take(MAX_INPUT_CHARS),
+                        user = forModel(transcript),
                         grammar = LmWireFormat.GRAMMAR,
                         maxTokens = LmWireFormat.MAX_TOKENS,
                         assistantPrefix = LmWireFormat.ASSISTANT_PREFIX,
