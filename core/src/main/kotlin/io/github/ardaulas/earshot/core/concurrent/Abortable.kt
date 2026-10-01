@@ -1,6 +1,7 @@
 package io.github.ardaulas.earshot.core.concurrent
 
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
@@ -28,7 +29,9 @@ suspend fun <T> runAbortable(
         reset()
         val done = AtomicBoolean(false)
         val watcher =
-            launch {
+            // Started in place: a cancellation that arrives before a dispatched start would skip the
+            // body, and with it the abort.
+            launch(start = CoroutineStart.UNDISPATCHED) {
                 try {
                     awaitCancellation()
                 } finally {

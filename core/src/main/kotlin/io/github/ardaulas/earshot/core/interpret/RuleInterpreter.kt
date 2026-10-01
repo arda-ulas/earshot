@@ -136,13 +136,17 @@ class RuleInterpreter {
 
             // A direction with a fan level ("turn down the fan 4") is a change, not that level; and a
             // direction with fan off is a second request (pre-review of re-audit 7, #1).
-            isFan(actions.single()) && (WARMER_WORD.containsMatchIn(t) || COOLER_WORD.containsMatchIn(t)) &&
-                !SET_TO.containsMatchIn(t) -> {
+            isFan(actions.single()) && (WARMER_WORD.containsMatchIn(t) || COOLER_WORD.containsMatchIn(t)) -> {
                 RuleResult.Rejected("unclear change")
             }
 
             // A number followed by "to", "too" or "for" may be a misheard "22" or "24".
             NUMBER_THEN_HOMOPHONE.containsMatchIn(t) -> {
+                RuleResult.Rejected("unclear number")
+            }
+
+            // A number written with a leading zero ("022") is not a plain value.
+            LEADING_ZERO.containsMatchIn(t) -> {
                 RuleResult.Rejected("unclear number")
             }
 
@@ -400,7 +404,11 @@ class RuleInterpreter {
         val COMMAND_VERB = Regex("""\b(set|turn|switch|make|put|change|raise|lower|increase|decrease|keep|get)\b""")
         val REPEATABLE = Regex("""\b(fan|defrost|ac|temperature|heat|on|off|up|down|warmer|cooler)\b""")
         val FRONT = Regex("""\bfront\b|(?<!rear |back )\bwindshield\b""")
-        val REAR = Regex("""\brear\b|\bback\b(?!\s+(?:on|off)\b)""")
+
+        // "back" is the rear window, except in "turn the defrost back on" (on again), where it
+        // directly follows the thing switched (independent audit, NEW-1).
+        val REAR = Regex("""\brear\b|(?<!\b(?:defrost|it|ac|fan|heat|heater) )\bback\b|\bback\b(?!\s+(?:on|off)\b)""")
+        val LEADING_ZERO = Regex("""\b0\d+\b""")
         val NUMBER_THEN_HOMOPHONE = Regex("""\b\d+\s+(to|too|for)\b""")
         val DEFERRAL =
             Regex("""\b(later|soon|after|until|when|in a (bit|minute|moment|second|while)|for a (bit|minute|moment|while))\b""")
@@ -411,20 +419,11 @@ class RuleInterpreter {
         val ACTION_VOCABULARY =
             setOf(
                 "please",
-                "can",
-                "could",
-                "would",
-                "will",
-                "you",
-                "i",
-                "id",
-                "want",
                 "lets",
                 "let",
                 "us",
                 "me",
                 "my",
-                "we",
                 "the",
                 "a",
                 "an",
@@ -454,10 +453,6 @@ class RuleInterpreter {
                 "just",
                 "bit",
                 "little",
-                "lot",
-                "more",
-                "much",
-                "some",
                 "slightly",
                 "degree",
                 "degrees",

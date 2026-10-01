@@ -229,9 +229,8 @@ It holds no audio. On a debug build, a trace file can be read with
   reaches whisper.cpp as an array of samples, not as a file.
 - **Clip parsing in debug builds.** Clip WAVs are parsed in Kotlin by `WavReader`. Since v0.2.1 it
   checks the fmt chunk length, bounds the sample rate (8-96 kHz) and channel count, and reports any
-  malformed header as an `IOException` (unit-tested, including truncation at every length). A clip is
-  still read whole before the 8 s limit applies, so a very large clip can exhaust memory in a debug
-  build (TH-2).
+  malformed header as an `IOException` (unit-tested, including truncation at every length). A clip
+  file over 2 MB is not read, and a clip longer than 8 s is refused whole (TH-2).
 
 ## Standards and regulations
 

@@ -51,6 +51,9 @@ object TextNormalizer {
         val folded =
             raw
                 .lowercase()
+                // A long dash between number words is an interruption, not the hyphen of "twenty-one"
+                // (independent audit, P2-2).
+                .replace(Regex("""\b($NUMBER_WORDS)\s*[\u2012-\u2015]+\s*(?=(?:$NUMBER_WORDS)\b)"""), "$1 $UNKNOWN_SYMBOL ")
                 // Every dash-like character is a minus or a hyphen, never silently dropped (pre-review F4).
                 .replace(Regex("""[\u02D7\u2010-\u2015\u2212\uFE63\uFF0D]"""), "-")
                 // Curly apostrophes and quotes: "don’t" must stay a negation (audit re-check #1).
@@ -102,7 +105,10 @@ object TextNormalizer {
                 .replace(Regex("""\b($NUMBER_WORDS)\s*[,"()]+[\s,"()]*(?=(?:$NUMBER_WORDS)\b)"""), "$1 $UNKNOWN_SYMBOL ")
                 .replace(Regex("""[.,!?;:"()]"""), " ")
                 .replace(Regex("""[^a-z0-9\s']"""), " $UNKNOWN_SYMBOL ")
-                .replace("'", "")
+                // An apostrophe inside a word ("don't") goes; anywhere else ("2'1", "twenty 'one'") it is
+                // a symbol, so it cannot join numbers.
+                .replace(Regex("""(?<=[a-z])'(?=[a-z])"""), "")
+                .replace("'", " $UNKNOWN_SYMBOL ")
         return joinNumberWords(folded.split(Regex("""\s+""")).filter { it.isNotEmpty() }).joinToString(" ")
     }
 

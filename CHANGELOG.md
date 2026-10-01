@@ -62,6 +62,10 @@ test clips unless stated otherwise. Nothing here has run in a vehicle.
     checks the clock, since the timeout can fire late on a busy thread.
   - Losing every driving signal is unknown at once, not the last state for up to 1 s; a short reply
     (an action's read-back) is always spoken, even if the car started moving meanwhile.
+  - "The defrost in the back" is the rear window again (only "turn the defrost back on" means on
+    again); "more" after a fan level, modal and first-person sentences ("the defrost will turn off",
+    "I set the fan to 3"), a long dash or an apostrophe between numbers, and a leading zero are
+    refused.
   - Traces: a hard 1 MB per file, expired files deleted at start-up as well, and a turn that could
     not be stored says so.
   - A zero speed with no gear reading is unknown, not parked; a relative change from a temperature

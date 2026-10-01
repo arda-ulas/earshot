@@ -693,4 +693,46 @@ class AuditRegressionTest {
         rules.interpret("turn the fan to 3") shouldBe RuleResult.Matched(Command.SetFan(3))
         rules.interpret("set the temperature to twenty one") shouldBe RuleResult.Matched(Command.SetTemp(21))
     }
+
+    @Test
+    @Verifies("SR-1", "SR-3")
+    fun `independent audit - the rear window stays the rear window, and relative or declarative phrasings never act`() =
+        runTest {
+            val rules = RuleInterpreter()
+            val rear = io.github.ardaulas.earshot.core.command.Window.REAR
+            val front = io.github.ardaulas.earshot.core.command.Window.FRONT
+            rules.interpret("turn the defrost in the back off") shouldBe RuleResult.Matched(Command.SetDefrost(rear, false))
+            rules.interpret("turn the defrost at the back off please") shouldBe RuleResult.Matched(Command.SetDefrost(rear, false))
+            rules.interpret("turn the defrost in the back on") shouldBe RuleResult.Matched(Command.SetDefrost(rear, true))
+            rules.interpret("turn the defrost back on") shouldBe RuleResult.Matched(Command.SetDefrost(front, true))
+            for (text in listOf(
+                "turn the ac in the back off",
+                "fan 2 more",
+                "fan two more",
+                "the fan one more",
+                "fan 1 a little more",
+                "22 degrees more",
+                "fan to 3 down",
+                "turn the fan to 1 down",
+                "the defrost will turn off",
+                "you would turn the defrost off",
+                "i can turn the defrost off",
+                "i set the fan to 3",
+                "it will get warmer",
+                "set temperature to twenty\u2014one",
+                "set temperature to twenty\u2013one",
+                "set temperature to 2'1",
+                "set temperature to twenty 'one'",
+                "set temperature to 022",
+            )) {
+                (rules.interpret(text) is RuleResult.Matched) shouldBe false
+            }
+            // End to end: the rear request never touches the front defrost.
+            val r = rig(DrivingState.PARKED)
+            r.vehicle.write(ClimateProperty.FRONT_DEFROST, 1)
+            r.vehicle.write(ClimateProperty.REAR_DEFROST, 1)
+            r.say("turn the defrost in the back off").outcome shouldBe Outcome.ACTED
+            (r.vehicle.read(ClimateProperty.FRONT_DEFROST) as ReadResult.Value).value shouldBe 1
+            (r.vehicle.read(ClimateProperty.REAR_DEFROST) as ReadResult.Value).value shouldBe 0
+        }
 }
