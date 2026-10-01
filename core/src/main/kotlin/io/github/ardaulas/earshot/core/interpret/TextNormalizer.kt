@@ -94,6 +94,8 @@ object TextNormalizer {
                 // A slash left over (between words, "twenty/one") is a fraction or a choice, never a
                 // space: it becomes a word the rules refuse (re-audit 5, #2).
                 .replace("/", " slash ")
+                // A colon left over ("twenty:one") is not understood either (re-audit 6, #2).
+                .replace(":", " $UNKNOWN_SYMBOL ")
                 .replace(Regex("""[.,!?;:"()]"""), " ")
                 .replace(Regex("""[^a-z0-9\s']"""), " $UNKNOWN_SYMBOL ")
                 .replace("'", "")

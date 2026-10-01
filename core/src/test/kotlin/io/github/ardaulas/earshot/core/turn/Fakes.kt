@@ -124,6 +124,15 @@ class FaultInjectingGateway(
     var readDelayMs = 0L
     var onRead: (() -> Unit)? = null
 
+    /**
+     * A write queued behind another call: it waits this long even if its caller gives up, then checks
+     * the guard, as a car worker does.
+     */
+    var queuedWriteDelayMs = 0L
+
+    /** What the guard said when the queued write reached it. */
+    var queuedGuardResult: Boolean? = null
+
     /** Runs when a write reaches the gateway, before the delegate's own checks (a queued write). */
     var onWrite: (() -> Unit)? = null
 
@@ -162,6 +171,12 @@ class FaultInjectingGateway(
             hangWrites -> {
                 delay(Long.MAX_VALUE)
                 error("unreachable")
+            }
+
+            queuedWriteDelayMs > 0 -> {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { delay(queuedWriteDelayMs) }
+                queuedGuardResult = guard()
+                if (queuedGuardResult == true) delegate.write(property, value, notAfterMs) else WriteResult.Aborted
             }
 
             else -> {

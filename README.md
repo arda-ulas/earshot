@@ -281,9 +281,9 @@ What the code does:
   value with the car stopped in drive would read as parked ([docs/safety.md](docs/safety.md), Known gaps).
 - While moving or unknown: no assistant output on screen, replies of at most 12 words, and a spoken
   yes for visibility-reducing commands (defrost off; fan off, because the front defrost is
-  treated as on: a defrost reading could change before the write). Status text still shows. Under the platform's UX restrictions the developer view is
-  hidden except for the debug build's clip player; otherwise it keeps its test controls but hides
-  climate values and the last turn, and the debug caption is hidden. A result shown while parked is not
+  treated as on: a defrost reading could change before the write). Status text still shows. Under the platform's UX restrictions, or on the car path
+  whenever not parked, the developer view shows no controls; on the phone it keeps its test controls
+  but hides climate values and the last turn, and the debug caption is hidden. A result shown while parked is not
   rendered once the car is no longer parked, and a long parked reply is stopped.
 - Confidence below 0.5 or unknown: ask once to repeat, then stop. The rules refuse the negated,
   questioning, multi-part, conflicting and unsupported-target or unsupported-zone requests they

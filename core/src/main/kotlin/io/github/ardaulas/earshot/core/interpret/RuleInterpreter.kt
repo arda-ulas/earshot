@@ -365,7 +365,8 @@ class RuleInterpreter {
         val NUMBER = Regex("""\b\d+\b""")
         val WARMER_WORD = Regex("""\b(warmer|hotter|warm|heat up|up|raise|increase)\b""")
         val COOLER_WORD = Regex("""\b(cooler|colder|cool|down|lower|decrease)\b""")
-        val TEMP_TARGET = Regex("""\b(temperature|thermostat|heat|heating|heater|degrees?|warmer|hotter|cooler|colder|warm)\b""")
+        val TEMP_TARGET =
+            Regex("""\b(temperature|thermostat|heat|heating|heater|degrees?|warmer|hotter|cooler|colder|warm|cool|cooling|hot|cold)\b""")
         val FAN_TARGET = Regex("""\bfan\b""")
         val FAN_MAX_WORD = Regex("""\b(max|maximum|full|highest)\b""")
         val SENTENCE_BREAK = Regex("""[;]|[.!?](?=\s*\S)""")

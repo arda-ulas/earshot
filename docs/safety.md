@@ -174,8 +174,8 @@ The simulated vehicle also rejects values outside each property's range.
 
 A turn performs at most one vehicle write request (SR-16). A failed or timed-out write is reported by
 voice and is not retried (SR-14). On the car API one request writes every seat area of the single
-zone; if some areas accept and others reject, the request is reported as failed although some areas
-changed (a known gap).
+zone, checking the turn and the driving state before each area; if some areas change and others do
+not, the reply says only part of the change was made.
 
 ### Confirm from the read-back
 
@@ -370,15 +370,17 @@ parked. [10]
   caption hide transcripts, replies and climate values unless parked, which also covers Android
   Automotive's `UX_RESTRICTIONS_NO_VOICE_TRANSCRIPTION` flag. [12]
 - **App-level fixes without automated tests.** Capture overflow and microphone failure (the whole
-  utterance is refused), stopping parked-only speech when the car starts moving, confirmation only
+  utterance is refused; a read that ends early is detected from the samples missing against the time
+  held, so a gap shorter than about 150 ms is not detected), stopping parked-only speech when the car starts moving, confirmation only
   after the question was spoken, teardown during inference, and cancellation during model loading
   are implemented in `:app` and reviewed, but no automated test drives `AudioRecord`, text-to-speech
   or the view-model lifecycle. Cancellation during model loading can still leave a loaded engine
   unowned until the process ends (re-audit finding N9, not fixed).
 - **Debug clip hook.** Under the platform's UX restrictions the screen has no test controls at all.
   Debug builds instead accept a clip name in the launch intent (`--es earshot.debug.clip NAME`, used
-  by `scripts/drive-clips.py`); any app on the device could send it, but only a file already in the
-  app's clip folder can be played. Release builds have neither the clip player nor the hook.
+  by `scripts/drive-clips.py`), but only with a random token from the app's private files, which
+  another app cannot read and `adb shell run-as` can on the debuggable build. Only a file already in
+  the app's clip folder can be played. Release builds have neither the clip player nor the hook.
 - **The single path to the vehicle is kept by review.** Today the main (non-test) sources have one
   call to `VehicleGateway.write`, in `TurnEngine`. No automated check enforces that.
 - **Simulated vehicle and emulator HAL.** On the phone, driving signals come from scripted scenarios.

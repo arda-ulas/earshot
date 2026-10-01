@@ -637,4 +637,28 @@ class AuditRegressionTest {
             r.vehicle.signalsOverride = SignalSample(0.0, Gear.PARK, atMs = -5_000)
             r.say("how fast am I going").spoken shouldBe Responses.SPEED_UNAVAILABLE
         }
+
+    @Test
+    @Verifies("SR-7", "SR-14")
+    fun `re-audit 6 N12 - a write still queued when the write timeout fires never starts`() =
+        runTest {
+            val r = rig(DrivingState.PARKED)
+            r.vehicle.queuedWriteDelayMs = 1_200
+            r.say("set the temperature to 19").spoken shouldBe Responses.writeUnconfirmed(Command.SetTemp(19))
+            r.vehicle.queuedGuardResult shouldBe false
+            (r.temp() == 19) shouldBe false
+        }
+
+    @Test
+    @Verifies("SR-1", "SR-3")
+    fun `re-audit 6 1 and 2 - fan with a cooling request, and a colon between number words, never act`() {
+        val rules = RuleInterpreter()
+        (rules.interpret("Turn the fan off, cool it down") is RuleResult.Matched) shouldBe false
+        (rules.interpret("set temperature to twenty:one") is RuleResult.Matched) shouldBe false
+    }
+
+    @Test
+    fun `re-audit 6 N28 - the out-of-range reply is short enough to be spoken while moving`() {
+        (Responses.temperatureOutsideRange(30).split(" ").size <= Policy.MAX_WORDS_WHILE_MOVING) shouldBe true
+    }
 }

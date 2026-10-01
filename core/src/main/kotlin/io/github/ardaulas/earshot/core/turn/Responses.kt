@@ -42,8 +42,9 @@ object Responses {
 
     fun writeUnconfirmed(command: Command) = "I couldn't confirm the change to the ${subject(command)}. Please check it."
 
+    /** At most 12 words, so it is spoken while moving too (re-audit 6, N28). */
     fun temperatureOutsideRange(celsius: Int) =
-        "It's $celsius degrees, outside the range I can change. Say a temperature from ${Bounds.TEMP_C.first} to ${Bounds.TEMP_C.last}."
+        "It's $celsius degrees, outside ${Bounds.TEMP_C.first} to ${Bounds.TEMP_C.last}. Say a temperature."
 
     fun confirmQuestion(command: Command): String = "${describe(command)}? Say yes or no."
 

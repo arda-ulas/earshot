@@ -520,15 +520,19 @@ class TurnEngine(
         // Checked again by the gateway right before the first effect, wherever that runs: a write queued
         // behind a slow car call must not start after the turn was cancelled or the state changed
         // (re-audit 3, N12 and #7).
-        val job = currentCoroutineContext()[Job]
         // Set when this turn stops waiting: a write still queued then must not start (re-audit 4, N12).
         val abandoned =
             java.util.concurrent.atomic
                 .AtomicBoolean(false)
-        val guard = { !abandoned.get() && job?.isActive != false && drivingState() == allowedIn }
         val result =
             try {
-                withTimeoutOrNull(config.writeTimeoutMs) { vehicle.write(property, value, a.deadlineMs, guard) }
+                withTimeoutOrNull(config.writeTimeoutMs) {
+                    // The timeout's own job: cancelled the moment the timeout fires (and with the
+                    // turn), before this turn resumes, so that window is closed too (re-audit 6, N12, N22).
+                    val waiting = currentCoroutineContext()[Job]
+                    val guard = { !abandoned.get() && waiting?.isActive != false && drivingState() == allowedIn }
+                    vehicle.write(property, value, a.deadlineMs, guard)
+                }
             } finally {
                 abandoned.set(true)
             }

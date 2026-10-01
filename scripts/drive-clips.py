@@ -136,10 +136,23 @@ def idle(timeout=60):
     raise SystemExit("app not idle")
 
 
+TOKEN = None
+
+
+def token():
+    """The app's private debug token, readable through run-as on a debuggable build only."""
+    global TOKEN
+    if TOKEN is None:
+        TOKEN = sh("shell", f"run-as {PKG} --user {USER} cat files/debug-clip-token").strip()
+        if not re.fullmatch(r"[0-9a-f]{32}", TOKEN):
+            raise SystemExit("no debug token yet: start the app once, then retry")
+    return TOKEN
+
+
 def request(clip):
     """Debug builds only: asks the running activity to play a clip (no on-screen controls needed)."""
     sh("shell", "am", "start", "--user", USER, "-f", "0x20000000", "-n", f"{PKG}/{PKG}.app.MainActivity",
-       "--es", "earshot.debug.clip", clip)
+       "--es", "earshot.debug.clip", clip, "--es", "earshot.debug.token", token())
 
 
 def play(clip, answer=None):

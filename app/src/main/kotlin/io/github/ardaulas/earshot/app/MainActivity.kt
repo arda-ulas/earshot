@@ -34,6 +34,7 @@ class MainActivity : ComponentActivity() {
         ) {
             requestCarSpeed.launch(CAR_SPEED)
         }
+        ClipProvider.prepare(this)
         enableEdgeToEdge()
         setContent {
             EarshotTheme {
@@ -49,7 +50,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         // Debug builds only (the release ClipProvider returns null): a test driver's clip request.
-        ClipProvider.requestedClip(intent)?.let(viewModel::playClip)
+        ClipProvider.requestedClip(this, intent)?.let(viewModel::playClip)
     }
 
     override fun onStart() {

@@ -10,7 +10,13 @@ object ClipProvider {
     fun clips(context: Context): List<File> = emptyList()
 
     @Suppress("UNUSED_PARAMETER")
-    fun requestedClip(intent: Intent?): String? = null
+    fun prepare(context: Context) = Unit
+
+    @Suppress("UNUSED_PARAMETER")
+    fun requestedClip(
+        context: Context,
+        intent: Intent?,
+    ): String? = null
 
     @Suppress("UNUSED_PARAMETER")
     fun caption(

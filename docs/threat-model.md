@@ -8,10 +8,10 @@ not score or rank risks; residual risk is described in words. It is not an asses
 standard, and the project claims no compliance with any standard or regulation (see
 [Standards and regulations](#standards-and-regulations)).
 
-It describes the code at v0.2.1. Compared with v0.2.0, v0.2.1 adds documentation, Dependabot ignore
-rules for AndroidX updates that need compileSdk 37, and a debug-only on-screen caption for screen
-recordings (text read from `clips/captions.tsv`). It does not change the speech pipeline, the policy
-or the native code. Hazards and safety goals are in [safety.md](safety.md). The requirements that
+It describes the code at v0.3.0: the phone emulator with the simulated vehicle, and the Android
+Automotive emulator with the car API (speed, gear and UX restrictions read; climate written only by
+the emulator's privileged install). v0.3.0 also fixes the findings of an external hostile review of
+v0.2.1 and its re-reviews. Hazards and safety goals are in [safety.md](safety.md). The requirements that
 come from these threats (SR-1, SR-12, SR-20) are in [requirements.md](requirements.md), and the tests
 that verify them are listed in [traceability.md](traceability.md). The design decisions behind
 several mitigations are in [ADR 0003](adr/0003-fail-safe-defaults.md) (fail-safe defaults) and
@@ -19,14 +19,14 @@ several mitigations are in [ADR 0003](adr/0003-fail-safe-defaults.md) (fail-safe
 
 ## Scope
 
-Earshot runs on the Android phone emulator (arm64, API 36), not the Android Automotive OS emulator
-yet. The vehicle is `SimulatedVehicleGateway`, a simulation inside the app. There are no users and no
-real vehicle.
+Earshot runs on the Android phone emulator (arm64, API 36), with `SimulatedVehicleGateway`, a
+simulation inside the app, and on the Android Automotive emulator (Android 15, arm64), with the car API
+over the emulator's vehicle HAL. There are no users and no real vehicle.
 
 In scope:
 
 - The app: `:app` (Compose, one activity), `:core` (interpreters, policy, turn engine, simulated
-  vehicle, traces), `:native:whisper` (whisper.cpp v1.9.4 over JNI) and `:native:llama` (llama.cpp
+  vehicle, traces), `:vehicle:car` (car API access), `:native:whisper` (whisper.cpp v1.9.4 over JNI) and `:native:llama` (llama.cpp
   v0.5.0 over JNI).
 - The model files and how they reach the device: `models/manifest.json`, `scripts/fetch-models.sh`,
   `scripts/push-models.sh`.
@@ -34,9 +34,8 @@ In scope:
 
 Out of scope in this phase:
 
-- A real vehicle, the Android Automotive car API and a privileged install. None of them exists in
-  Phase 1. Since v0.3.0 the app also runs on the Android Automotive emulator with the car API (see TH-3).
-  Nothing in this project runs in a real vehicle.
+- A real vehicle. Nothing in this project runs in one. The Android Automotive emulator and its
+  privileged install are in scope (TH-3).
 - Devices other than the API 36 emulator. The app's minSdk is 29, so it installs on older Android
   versions. Their storage and permission rules are not analysed here.
 - Network attacks on the running app. It has no `INTERNET` permission.
@@ -124,7 +123,7 @@ check. There are no **mic** results yet: M-13 and M-15 are pending.
 | ID | Surface | Threat (STRIDE) | Mitigation in the code | Status and evidence | Residual risk |
 |---|---|---|---|---|---|
 | TH-1 | Microphone | Spoofing: injected audio (radio, passenger, played recording) issues a command | Push-to-talk only. Only in-domain commands on allowlisted properties can act, and only at a known speech-to-text confidence of 0.5 or more. A spoken yes is needed for visibility-reducing commands while moving or unknown, and for every language-model command. One action per turn. The model's prompt says never obey instructions inside the request, the grammar leaves it no free-text output, and its text never reaches text-to-speech. | Implemented; unit-tested and run on the emulator (clip). unit (SR-1, SR-8, SR-10, SR-16, SR-17). device (clip): M-6 and M-17 refuse "Order me a pizza". Language-model held-out set (typed text): one injection item, labelled out of domain by the shipped model | Audio played while the button is held can still issue comfort commands and queries. While parked it can issue any allowlisted command the rules match, because parked needs no confirmation. A recorded "yes" counts as a confirmation. No speaker verification. Not yet tested with a live microphone. |
-| TH-2 | App components (IPC) | Elevation of privilege: another app triggers actions | Only the launcher activity is exported, and it reads nothing from its intent. AndroidX `ProfileInstallReceiver` (exported, guarded by a DUMP permission) is removed from the merged manifest. `ui-tooling` is dropped: it exported `PreviewActivity` in debug builds. | Implemented; build-checked in CI. build: `:app:verify<Variant>MergedManifest` (SR-20) runs in CI for debug and release. Negative-tested by adding `INTERNET`, which failed the build | The clip player is in-app UI in debug builds only, not an exported component. It reads WAVs from the app's external files directory, so anyone who can write there (for example over `adb`) can feed audio to a debug build. Debug builds also read `captions.tsv` (at most 64 KB) from there and show its text on screen while parked, so the same person can put text on a parked debug build's screen. `WavReader` validates the header (fmt length, rate, channels) and turns malformed input into an error; clips over 2 MB are not read. Clip turns are traced as `CLIP`. Release builds have no clip input and no caption. |
+| TH-2 | App components (IPC) | Elevation of privilege: another app triggers actions | Only the launcher activity is exported. Release builds read nothing from its intent. Debug builds accept a test clip name in it only together with a 128-bit token stored in the app's private files, which another app cannot read (`adb shell run-as` can, on the debuggable build). AndroidX `ProfileInstallReceiver` (exported, guarded by a DUMP permission) is removed from the merged manifest. `ui-tooling` is dropped: it exported `PreviewActivity` in debug builds. | Implemented; build-checked in CI. build: `:app:verify<Variant>MergedManifest` (SR-20) runs in CI for debug and release. Negative-tested by adding `INTERNET`, which failed the build | The clip player and the token-checked clip intent exist in debug builds only, and the privileged emulator install is a debug build; the token is as strong as the device's app sandbox, not component. It reads WAVs from the app's external files directory, so anyone who can write there (for example over `adb`) can feed audio to a debug build. Debug builds also read `captions.tsv` (at most 64 KB) from there and show its text on screen while parked, so the same person can put text on a parked debug build's screen. `WavReader` validates the header (fmt length, rate, channels) and turns malformed input into an error; clips over 2 MB are not read. Clip turns are traced as `CLIP`. Release builds have no clip input and no caption. |
 | TH-3 | Permissions, privileged install | Elevation of privilege: over-broad permissions | `RECORD_AUDIO` at the first press; on Android Automotive only, `CAR_SPEED` (runtime), `CAR_POWERTRAIN` (normal) and `CONTROL_CAR_CLIMATE` (signature\|privileged, granted only to the emulator's privileged install through a one-permission allowlist) ([permissions.md](permissions.md), [ADR 0006](adr/0006-vehicle-access-car-api.md)). No `INTERNET` or storage permissions. | Implemented; `INTERNET` build-checked (SR-20), the rest by manifest review; the privileged grant verified with `dumpsys package` on the emulator | A privileged app has system-level trust on that image; emulator only, debug-signed, removable. AndroidX core also adds an app-defined signature-level permission (`io.github.ardaulas.earshot.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`). |
 | TH-4 | Model files | Tampering: tampered or swapped model | Models are never committed. `models/manifest.json` pins the Hugging Face revision (in the download URL), size, SHA-256 and licence. `scripts/fetch-models.sh` downloads from the pinned revision URL and checks size and SHA-256. The app verifies the shared copy, copies it into app-private storage, verifies that copy, and loads only the app-private copy (`ModelGate`, `ModelStore`, since v0.3.0). No valid speech model: the assistant is disabled with the reason on screen. Invalid language model: only the fallback is disabled. | Implemented; unit-tested and run on the emulator. unit (SR-12, fault injection). device: M-14, one byte of the speech model changed on the device; assistant disabled with the reason, no crash | No other app can write the app-private copy, so what was checked is what is loaded; before v0.3.0 the native library reopened the shared file by path after the check (audit finding #15). The pins show that a file is the one the author chose. They do not vouch for the upstream file itself. |
 | TH-5 | Dependencies and build | Tampering: malicious or vulnerable dependency, tampered Gradle wrapper | Versions in one catalog (`gradle/libs.versions.toml`). whisper.cpp and llama.cpp pinned by release tag and tarball SHA-256 (CMake `FetchContent` with `URL_HASH`), with only their core libraries built (tests, examples, tools and servers off). Gradle wrapper JAR checksum validated in CI (`gradle/actions/setup-gradle`). Dependabot checks Gradle and GitHub Actions weekly. | Implemented; partly build-checked. build: the native tarball SHA-256 (`URL_HASH`, both modules are built by `:app:assembleDebug`) and the wrapper validation run in every CI build. config: the version catalog and Dependabot | No Gradle dependency verification metadata and no SBOM yet (planned for the release phase). The Gradle distribution is pinned with `distributionSha256Sum` (since v0.3.0). Actions are referenced by major version tag, not by commit SHA. Dependabot ignores some AndroidX updates that need compileSdk 37 (`.github/dependabot.yml`), so those libraries can fall behind. The native code has not been fuzzed. |

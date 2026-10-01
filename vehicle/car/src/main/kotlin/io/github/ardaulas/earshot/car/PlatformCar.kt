@@ -30,6 +30,9 @@ class PlatformCar private constructor(
     private val ux: CarUxRestrictionsManager? =
         runCatching { car.getCarManager(Car.CAR_UX_RESTRICTION_SERVICE) as CarUxRestrictionsManager }.getOrNull()
 
+    private val uxLock = Any()
+    private var uxCallbackSeen = false
+
     /** True if the restrictions service could not be registered; restrictions then stay assumed. */
     var uxFailed = false
         private set
@@ -38,8 +41,16 @@ class PlatformCar private constructor(
         // Register first, then read; any failure leaves restrictions assumed (audit re-check N3).
         try {
             val m = ux ?: throw IllegalStateException("no UX restrictions service")
-            m.registerListener { r -> _requiresDistractionOptimization.value = r.isRequiresDistractionOptimization }
-            _requiresDistractionOptimization.value = m.currentCarUxRestrictions.isRequiresDistractionOptimization
+            // A callback is always newer than the initial read: the read is applied only if no
+            // callback arrived first, under one lock (re-audit 6, N26).
+            m.registerListener { r ->
+                synchronized(uxLock) {
+                    uxCallbackSeen = true
+                    _requiresDistractionOptimization.value = r.isRequiresDistractionOptimization
+                }
+            }
+            val initial = m.currentCarUxRestrictions.isRequiresDistractionOptimization
+            synchronized(uxLock) { if (!uxCallbackSeen) _requiresDistractionOptimization.value = initial }
         } catch (
             @Suppress("TooGenericExceptionCaught") e: Exception,
         ) {

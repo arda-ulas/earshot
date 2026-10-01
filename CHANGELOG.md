@@ -39,7 +39,7 @@ test clips unless stated otherwise. Nothing here has run in a vehicle.
   - The driving-state resolver drops readings stamped in the future instead of storing them; model
     snapshots are serialised and verified before they are published; debug clips longer than 8 s
     are refused whole; speech and its stop are serialised, so a stop can no longer let parked-only
-    speech play on; a microphone error, or more than 1 s of audio missing from the hold, refuses the
+    speech play on; a microphone error, or more than 150 ms of audio missing from the hold, refuses the
     utterance; a number next to a second value ("fan to 3 off") is refused.
   - The privileged installer sends every command to the emulator it checked; the manifest check
     refuses a non-literal `android:exported`.
@@ -50,6 +50,12 @@ test clips unless stated otherwise. Nothing here has run in a vehicle.
     platform's UX restrictions the screen has no test controls (debug builds take a clip name in the
     launch intent instead); "[inaudible]" is kept as words; stale speed and gear readings are not
     reported; a slash between number words is refused.
+  - The write guard is the timeout's own job, so a queued write cannot start in the moment between
+    the timeout and the turn resuming; a cancelled turn touches no shared state after capture or
+    speech-to-text; the car connection always has one owner; a restrictions callback is never
+    overwritten by an older reading; the debug clip intent needs a token from the app's private
+    files; a fan request with a cooling word and a colon between number words are refused; the
+    out-of-range reply is short enough to be spoken while moving.
   - Traces: a hard 1 MB per file, expired files deleted at start-up as well, and a turn that could
     not be stored says so.
   - A zero speed with no gear reading is unknown, not parked; a relative change from a temperature

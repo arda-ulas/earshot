@@ -143,11 +143,12 @@ class AudioCapture(
         val limit = s.limitReachedAtMs
         // Audio missing from the hold is a failure too, whatever the reader saw: a read that ended
         // early, recorded or not before key-up, leaves the samples short of the time since the first
-        // samples arrived (re-audit 4 and 5, N13). 300 ms covers buffering; a recorder that never
+        // samples arrived (re-audit 4 to 6, N13). 150 ms (one 100 ms read and margin) covers
+        // buffering, so a lost correction would have to be shorter than that; a recorder that never
         // delivered anything during a hold of more than 300 ms has failed as well.
         val since = s.firstSamplesAtMs ?: s.startMs
         val heldSamples = (releasedAt - since) * AudioGate.SAMPLE_RATE / 1000
-        val missing = limit == null && s.length < heldSamples - AudioGate.SAMPLE_RATE * 3 / 10
+        val missing = limit == null && s.length < heldSamples - AudioGate.SAMPLE_RATE * 15 / 100
         val failed = s.failedAtMs != null || missing
         if (failed) pcm.fill(0f)
         return Captured(pcm, s.startMs, limit ?: s.failedAtMs ?: releasedAt, overflowed = limit != null, failed = failed)

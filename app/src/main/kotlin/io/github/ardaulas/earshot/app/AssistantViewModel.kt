@@ -108,6 +108,9 @@ class AssistantViewModel(
     private val simulated = SimulatedVehicleGateway(clock, DrivingScenario.PARKED)
     private val automotive = app.packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE)
 
+    private val carLock = Any()
+    private var cleared = false
+
     /** Set once the car service is connected, off the main thread (re-audit 5, N4). */
     @Volatile private var platformCar: PlatformCar? = null
 
@@ -182,9 +185,18 @@ class AssistantViewModel(
                 car.areaIds(CarIds.HVAC_TEMPERATURE_SET).isNotEmpty() &&
                 isEmulator()
         val gateway = CarPropertyGateway(car, clock, realClimate = canWriteClimate, simulatedClimate = simulated)
-        platformCar = car
-        carGateway = gateway
-        vehicle.current = gateway
+        // Published only while the view model is alive; teardown takes the same lock, so the
+        // connection always has exactly one owner that disconnects it (re-audit 6, N27).
+        val published =
+            synchronized(carLock) {
+                if (!cleared) {
+                    platformCar = car
+                    carGateway = gateway
+                    vehicle.current = gateway
+                }
+                !cleared
+            }
+        if (!published) car.disconnect()
     }
 
     /** The platform's UX restrictions: null on a phone; restricted on Automotive until connected. */
@@ -429,8 +441,12 @@ class AssistantViewModel(
         _state.update { it.copy(phase = Phase.THINKING, message = null) }
         turnJob =
             viewModelScope.launch {
+                // Checked before every change to shared state, not only at the end: a turn cancelled
+                // while capture or speech-to-text finished must not touch a newer turn (re-audit 6, N23).
+                fun owns() = turnGeneration == owner && isActive
                 try {
                     val captured = audio()
+                    if (!owns()) return@launch
                     if (captured.overflowed || captured.failed) {
                         // Held past the limit, or the microphone stopped early: reject the whole utterance
                         // rather than act on its start (audit #9, re-audit 3 N13). The rejected utterance may
@@ -442,6 +458,7 @@ class AssistantViewModel(
                         return@launch
                     }
                     val result = turnEngine.handle(captured.pcm, source, captured.endMs, captured.startMs)
+                    if (!owns()) return@launch
                     _state.update {
                         it.copy(
                             phase = Phase.SPEAKING,
@@ -503,7 +520,11 @@ class AssistantViewModel(
         val jobs = listOfNotNull(turnJob, warmup)
         val s = speech
         val l = llm
-        val car = platformCar
+        val car =
+            synchronized(carLock) {
+                cleared = true
+                platformCar
+            }
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
             jobs.forEach { it.cancel() }
             s?.close()
