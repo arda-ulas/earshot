@@ -96,9 +96,14 @@ class JsonLinesProcess(
             take(timeoutMs)
             stale--
         }
-        stdin.write(line)
-        stdin.newLine()
-        stdin.flush()
+        try {
+            stdin.write(line)
+            stdin.newLine()
+            stdin.flush()
+        } catch (e: java.io.IOException) {
+            // The host already exited (broken pipe): report that, like a reply that never comes.
+            throw HostProcessException("$description: exited with ${process.waitFor()} (${e.message})")
+        }
         stale++
         val response = take(timeoutMs)
         stale--
