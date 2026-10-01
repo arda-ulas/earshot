@@ -8,6 +8,9 @@ class FakeCarProperties : CarProperties {
     val areas = mutableMapOf<Int, IntArray>()
     var rejectWrites = false
 
+    /** One area that refuses writes, to test mixed results. */
+    var rejectArea: Int? = null
+
     /** A blocking platform call: real sleep, as a binder call would block its thread. */
     var writeBlockMs = 0L
     val writes = mutableListOf<Triple<Int, Int, Any>>()
@@ -69,7 +72,7 @@ class FakeCarProperties : CarProperties {
         apply: () -> Unit,
     ): Boolean {
         if (writeBlockMs > 0) Thread.sleep(writeBlockMs)
-        if (rejectWrites) return false
+        if (rejectWrites || areaId == rejectArea) return false
         writes += Triple(propertyId, areaId, value)
         apply()
         return true

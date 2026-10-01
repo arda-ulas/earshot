@@ -125,6 +125,10 @@ class RuleInterpreter {
                 RuleResult.Rejected("more than one value")
             }
 
+            FAN_MAX_WORD.containsMatchIn(t) && (OFF.containsMatchIn(t) || ON.containsMatchIn(t)) -> {
+                RuleResult.Rejected("conflicting")
+            }
+
             // One target, one direction, one number: a second request must never vanish silently, and
             // a number must never be truncated to a valid one (pre-review F1, F2, F4).
             targets(t) > 1 -> {
@@ -344,7 +348,10 @@ class RuleInterpreter {
 
         val SET_TO = Regex("""\b(?:to|at)\s+(\d+)\b""")
         val DEGREES = Regex("""\b(\d+)\s+degrees\b""")
-        val QUESTION = Regex("""^(is|are|was|were|what|whats|how|did|does|do|why|when|can|could|would|will|should|has|have)\b""")
+        val QUESTION =
+            Regex(
+                """^(?:(?:please|so|ok|okay|hey|and|um|uh|well)\s+)*(is|are|was|were|what|whats|how|did|does|do|why|when|can|could|would|will|should|has|have)\b""",
+            )
         val NEGATION = Regex("""\b(dont|do not|not|never|no|nothing|without|stop|isnt|arent|wont|cant|shouldnt|neither|nor)\b""")
         val UNSUPPORTED_TARGET =
             Regex(

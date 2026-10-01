@@ -1,6 +1,7 @@
 package io.github.ardaulas.earshot.app
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.KeyEvent
@@ -43,6 +44,12 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // Debug builds only (the release ClipProvider returns null): a test driver's clip request.
+        ClipProvider.requestedClip(intent)?.let(viewModel::playClip)
     }
 
     override fun onStart() {

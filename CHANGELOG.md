@@ -43,6 +43,13 @@ test clips unless stated otherwise. Nothing here has run in a vehicle.
     utterance; a number next to a second value ("fan to 3 off") is refused.
   - The privileged installer sends every command to the emulator it checked; the manifest check
     refuses a non-literal `android:exported`.
+  - Each seat area of a car write is checked against the turn and the driving state before its
+    platform call; a write that stops midway, or where some areas refuse, is reported as partial.
+  - Only the newest turn may return the app to idle, so a cancelled turn cannot reopen the
+    microphone during a newer reply; the car service is connected off the main thread; under the
+    platform's UX restrictions the screen has no test controls (debug builds take a clip name in the
+    launch intent instead); "[inaudible]" is kept as words; stale speed and gear readings are not
+    reported; a slash between number words is refused.
   - Traces: a hard 1 MB per file, expired files deleted at start-up as well, and a turn that could
     not be stored says so.
   - A zero speed with no gear reading is unknown, not parked; a relative change from a temperature

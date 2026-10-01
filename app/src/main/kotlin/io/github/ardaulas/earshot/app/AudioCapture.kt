@@ -50,6 +50,9 @@ class AudioCapture(
         @Volatile var limitReachedAtMs: Long? = null
 
         @Volatile var failedAtMs: Long? = null
+
+        /** When the first samples arrived: recorder start-up time is not audio missing. */
+        @Volatile var firstSamplesAtMs: Long? = null
         var job: Job? = null
         private var released = false
 
@@ -112,6 +115,7 @@ class AudioCapture(
                             if (n < 0 || session === s) s.failedAtMs = clock.millis()
                             break
                         }
+                        if (s.firstSamplesAtMs == null) s.firstSamplesAtMs = clock.millis() - n * 1000L / AudioGate.SAMPLE_RATE
                         s.length += n
                     }
                     if (s.length >= s.buffer.size) s.limitReachedAtMs = clock.millis()
@@ -137,11 +141,13 @@ class AudioCapture(
         val pcm = s.buffer.copyOf(s.length)
         s.buffer.fill(0f)
         val limit = s.limitReachedAtMs
-        // Audio missing from the hold is a failure too, whatever the reader saw: a read error the
-        // reader could not record before key-up still leaves the samples short of the time held
-        // (re-audit 4, N13). One second covers recorder start-up and buffering.
-        val heldSamples = (releasedAt - s.startMs) * AudioGate.SAMPLE_RATE / 1000
-        val missing = limit == null && s.length < heldSamples - AudioGate.SAMPLE_RATE
+        // Audio missing from the hold is a failure too, whatever the reader saw: a read that ended
+        // early, recorded or not before key-up, leaves the samples short of the time since the first
+        // samples arrived (re-audit 4 and 5, N13). 300 ms covers buffering; a recorder that never
+        // delivered anything during a hold of more than 300 ms has failed as well.
+        val since = s.firstSamplesAtMs ?: s.startMs
+        val heldSamples = (releasedAt - since) * AudioGate.SAMPLE_RATE / 1000
+        val missing = limit == null && s.length < heldSamples - AudioGate.SAMPLE_RATE * 3 / 10
         val failed = s.failedAtMs != null || missing
         if (failed) pcm.fill(0f)
         return Captured(pcm, s.startMs, limit ?: s.failedAtMs ?: releasedAt, overflowed = limit != null, failed = failed)

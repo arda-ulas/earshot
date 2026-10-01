@@ -1,6 +1,7 @@
 package io.github.ardaulas.earshot.app
 
 import android.content.Context
+import android.content.Intent
 import java.io.File
 
 /**
@@ -31,6 +32,15 @@ object ClipProvider {
             ?.map { it.split('\t') }
             ?.firstOrNull { it.size == 3 && it[0] == clip }
             ?.let { (_, voice, text) -> "$text ($voice)" }
+
+    /**
+     * The clip named by a test driver in the launch intent (`--es earshot.debug.clip NAME`), so the
+     * moving rows of the manual test plan need no on-screen controls while the platform restricts
+     * the UI (re-audit 5, N6). Only a file already in the app's clip folder can be named.
+     */
+    fun requestedClip(intent: Intent?): String? = intent?.getStringExtra(EXTRA_CLIP)?.takeIf { it.endsWith(".wav") && '/' !in it }
+
+    private const val EXTRA_CLIP = "earshot.debug.clip"
 
     private const val MAX_CAPTIONS_BYTES = 64_000L
 }

@@ -3,7 +3,8 @@
 
   scripts/drive-clips.py CLIP [CLIP>>ANSWER ...]
 
-  CLIP            play one clip (file name in the app's clips folder)
+  CLIP            play one clip (file name in the app's clips folder), through the debug build's
+                  launch-intent hook, so it also works while the platform restricts the UI
   CLIP>>ANSWER    play a clip that asks for confirmation, then the answer clip
 Works on the phone emulator (user 0) and the Android Automotive emulator (secondary user, detected).
 Results are synthetic-clip input ("clip"), never live microphone.
@@ -125,35 +126,41 @@ def report(clip, t):
           f"{stages} | input={t['inputSource']} host={t['host']['device']}", flush=True)
 
 
+def idle(timeout=60):
+    """Waits until the push-to-talk button says "Hold to talk", i.e. the app takes a new turn."""
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if find("Hold to talk", dump()):
+            return
+        time.sleep(0.2)
+    raise SystemExit("app not idle")
+
+
+def request(clip):
+    """Debug builds only: asks the running activity to play a clip (no on-screen controls needed)."""
+    sh("shell", "am", "start", "--user", USER, "-f", "0x20000000", "-n", f"{PKG}/{PKG}.app.MainActivity",
+       "--es", "earshot.debug.clip", clip)
+
+
 def play(clip, answer=None):
-    xml = controls()
-    select(clip, xml)
-    xml, btn = wait_enabled("Play clip")
-    if not shows(clip, xml):
-        raise SystemExit(f"could not select {clip}")
+    names = clips()
+    for c in (clip, answer):
+        if c and c not in names:
+            raise SystemExit(f"no clip {c}")
+    idle()
     before = last_trace()
-    tap(btn[0], btn[1])
-    if answer:
-        # Select the answer while the question turn runs: the answer window is 10 s from the end of the
-        # spoken question, and stepping through the clip list takes longer than that.
-        time.sleep(0.5)
-        select(answer, dump())
+    request(clip)
     t = wait_new(before)
     report(clip, t)
     asked = time.time()
     if answer:
-        for _ in range(3):
-            xml, btn = wait_enabled("Play clip")
-            if shows(answer, xml):
-                break
-            select(answer, xml)
-        else:
-            raise SystemExit(f"could not select {answer}")
+        # The answer window is 10 s from the end of the spoken question.
+        idle()
         before = last_trace()
-        tap(btn[0], btn[1])
-        print(f"  (answer played {time.time() - asked:.1f} s after the question's trace)", flush=True)
+        request(answer)
+        print(f"  (answer requested {time.time() - asked:.1f} s after the question's trace)", flush=True)
         report(answer, wait_new(before))
-    time.sleep(3)
+    time.sleep(1)
 
 
 if __name__ == "__main__":

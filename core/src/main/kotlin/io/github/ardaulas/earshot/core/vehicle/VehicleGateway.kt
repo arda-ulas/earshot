@@ -41,6 +41,9 @@ sealed interface WriteResult {
 
     /** The guard said no immediately before the first effect (turn cancelled, driving state changed). */
     data object Aborted : WriteResult
+
+    /** Some areas changed and others did not (refused, or stopped by the deadline or the guard). */
+    data object Partial : WriteResult
 }
 
 /**

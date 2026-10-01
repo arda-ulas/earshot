@@ -107,25 +107,19 @@ class AssistantViewModel(
     private val clock = MonotonicClock.System
     private val simulated = SimulatedVehicleGateway(clock, DrivingScenario.PARKED)
     private val automotive = app.packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE)
-    private val platformCar: PlatformCar? = if (automotive) PlatformCar.connect(app) else null
-    private val carGateway: CarPropertyGateway? =
-        platformCar?.let { car ->
-            // Real climate writes: the privileged permission, supported properties, and an emulator
-            // (the privileged install is an emulator-only test setup; re-audit N5).
-            val canWriteClimate =
-                ContextCompat.checkSelfPermission(app, PERMISSION_CONTROL_CAR_CLIMATE) == PackageManager.PERMISSION_GRANTED &&
-                    car.areaIds(CarIds.HVAC_TEMPERATURE_SET).isNotEmpty() &&
-                    isEmulator()
-            CarPropertyGateway(car, clock, realClimate = canWriteClimate, simulatedClimate = simulated)
-        }
+
+    /** Set once the car service is connected, off the main thread (re-audit 5, N4). */
+    @Volatile private var platformCar: PlatformCar? = null
+
+    @Volatile private var carGateway: CarPropertyGateway? = null
 
     /**
-     * On a phone: the simulated vehicle. On Android Automotive: the car API, or, if the car service
-     * cannot be reached, a gateway with no signals and no controls, so the state is unknown (handled
-     * as moving) instead of a simulated "parked" (re-audit N2).
+     * On a phone: the simulated vehicle. On Android Automotive: a gateway with no signals and no
+     * controls until the car API is connected (so the state is unknown, handled as moving), then the
+     * car API. If the car service cannot be reached it stays unavailable, never a simulated "parked"
+     * (re-audit N2).
      */
-    private val vehicle: VehicleGateway =
-        carGateway ?: if (automotive) UnavailableVehicleGateway else simulated
+    private val vehicle = SwitchableGateway(if (automotive) UnavailableVehicleGateway else simulated)
     private val resolver = DrivingStateResolver()
     private val speaker = Speaker(app)
     private val capture = AudioCapture(clock)
@@ -147,6 +141,7 @@ class AssistantViewModel(
     val state: StateFlow<UiState> = _state
 
     init {
+        if (automotive) viewModelScope.launch(Dispatchers.IO) { connectCar(app) }
         viewModelScope.launch(Dispatchers.Default) { tickDrivingSignals() }
         viewModelScope.launch(Dispatchers.Default) { guardParkedOutput() }
         viewModelScope.launch { speaker.available.collect { a -> _state.update { it.copy(ttsAvailable = a) } } }
@@ -172,13 +167,35 @@ class AssistantViewModel(
         if (parkedOnlyOutput) speaker.stop()
     }
 
-    /** The platform's UX restrictions: null on a phone, where there is no restrictions service. */
-    private fun uxRestricted(): Boolean? =
-        when {
-            platformCar != null -> platformCar.requiresDistractionOptimization.value
+    /** Car-service binder calls can block, so they never run on the main thread (re-audit 5, N4). */
+    private suspend fun connectCar(app: Application) {
+        val car = PlatformCar.connect(app) ?: return
+        // The screen may have gone while connecting: let go of the car service again.
+        if (!currentCoroutineContext().isActive) {
+            car.disconnect()
+            return
+        }
+        // Real climate writes: the privileged permission, supported properties, and an emulator
+        // (the privileged install is an emulator-only test setup; re-audit N5).
+        val canWriteClimate =
+            ContextCompat.checkSelfPermission(app, PERMISSION_CONTROL_CAR_CLIMATE) == PackageManager.PERMISSION_GRANTED &&
+                car.areaIds(CarIds.HVAC_TEMPERATURE_SET).isNotEmpty() &&
+                isEmulator()
+        val gateway = CarPropertyGateway(car, clock, realClimate = canWriteClimate, simulatedClimate = simulated)
+        platformCar = car
+        carGateway = gateway
+        vehicle.current = gateway
+    }
+
+    /** The platform's UX restrictions: null on a phone; restricted on Automotive until connected. */
+    private fun uxRestricted(): Boolean? {
+        val car = platformCar
+        return when {
+            car != null -> car.requiresDistractionOptimization.value
             automotive -> true
             else -> null
         }
+    }
 
     /** Runs off the main thread: car-service calls can block (re-audit N4). */
     private suspend fun tickDrivingSignals() {
@@ -355,6 +372,9 @@ class AssistantViewModel(
         runTurn(InputSource.MIC) { capture.stop() }
     }
 
+    /** Increased by every new turn and by lifecycle loss; only the newest turn may end the phase. */
+    @Volatile private var turnGeneration = 0
+
     /** Whether the activity is started, i.e. whether anything on screen can be seen. */
     @Volatile private var visible = false
 
@@ -368,6 +388,7 @@ class AssistantViewModel(
      */
     fun onLifecycleStop() {
         visible = false
+        turnGeneration++
         capture.abort()
         turnJob?.cancel()
         speaker.stop()
@@ -401,6 +422,10 @@ class AssistantViewModel(
         audio: suspend () -> Captured,
     ) {
         val turnEngine = engine ?: return
+        // Each turn owns the phase only while it is the newest: a cancelled turn that finishes late
+        // must not set IDLE over a newer turn and reopen the microphone during its reply
+        // (re-audit 5, N23).
+        val owner = ++turnGeneration
         _state.update { it.copy(phase = Phase.THINKING, message = null) }
         turnJob =
             viewModelScope.launch {
@@ -434,8 +459,10 @@ class AssistantViewModel(
                         if (parkedOnlyOutput && drivingStateNow() != DrivingState.PARKED) false else speaker.speak(result.spoken)
                     result.confirmationId?.let { id -> deliverConfirmation(turnEngine, id, spoken) }
                 } finally {
-                    parkedOnlyOutput = false
-                    _state.update { it.copy(phase = Phase.IDLE, awaitingConfirmation = engine?.isAwaitingConfirmation ?: false) }
+                    if (turnGeneration == owner) {
+                        parkedOnlyOutput = false
+                        _state.update { it.copy(phase = Phase.IDLE, awaitingConfirmation = engine?.isAwaitingConfirmation ?: false) }
+                    }
                 }
             }
     }
@@ -518,4 +545,24 @@ private object UnavailableVehicleGateway : VehicleGateway {
     ) = io.github.ardaulas.earshot.core.vehicle.WriteResult.Unavailable
 
     override fun latestSignals(): io.github.ardaulas.earshot.core.vehicle.SignalSample? = null
+}
+
+/** A gateway whose target can be swapped once, when the car API becomes available. */
+private class SwitchableGateway(
+    initial: VehicleGateway,
+) : VehicleGateway {
+    @Volatile var current: VehicleGateway = initial
+
+    override val isAvailable: Boolean get() = current.isAvailable
+
+    override suspend fun read(property: ClimateProperty) = current.read(property)
+
+    override suspend fun write(
+        property: ClimateProperty,
+        value: Int,
+        notAfterMs: Long,
+        guard: () -> Boolean,
+    ) = current.write(property, value, notAfterMs, guard)
+
+    override fun latestSignals() = current.latestSignals()
 }

@@ -41,6 +41,8 @@ data class TurnConfig(
      * utterance so slow speech-to-text does not count against the driver.
      */
     val confirmationTtlMs: Long = 10_000,
+    /** A speed or gear reading older than this is not reported (the resolver's staleness limit). */
+    val signalFreshMs: Long = 1_000,
     /** Speech-to-text that takes longer is abandoned and treated as unclear audio (re-prompt). */
     val sttTimeoutMs: Long = 10_000,
     /** A vehicle write that takes longer counts as failed; there is no retry loop. */
@@ -447,12 +449,13 @@ class TurnEngine(
             }
 
             Command.QuerySpeed -> {
-                val speed = vehicle.latestSignals()?.speedKmh
+                // A reading older than the resolver accepts is not reported (re-audit 5, N24).
+                val speed = freshSignals()?.speedKmh
                 answered(if (speed == null || speed.isNaN()) Responses.SPEED_UNAVAILABLE else Responses.speed(speed))
             }
 
             Command.QueryGear -> {
-                val gear = vehicle.latestSignals()?.gear
+                val gear = freshSignals()?.gear
                 answered(if (gear == null) Responses.GEAR_UNAVAILABLE else Responses.gear(gear))
             }
 
@@ -572,6 +575,10 @@ class TurnEngine(
                 unavailable(turn, verdict)
             }
 
+            WriteResult.Partial -> {
+                turn.result(verdict, Outcome.FAILED, Responses.writePartial(command), null)
+            }
+
             WriteResult.Aborted -> {
                 turn.result(verdict, Outcome.DISCARDED_STATE_CHANGED, Responses.STATE_CHANGED, null)
             }
@@ -588,6 +595,12 @@ class TurnEngine(
             null
         } else {
             (withTimeoutOrNull(config.writeTimeoutMs) { vehicle.read(property) } as? ReadResult.Value)?.value
+        }
+
+    private fun freshSignals() =
+        vehicle.latestSignals()?.takeIf {
+            val age = clock.millis() - it.atMs
+            age in 0..config.signalFreshMs
         }
 
     private suspend fun readBool(property: ClimateProperty): Boolean? = readInt(property)?.let { it != 0 }

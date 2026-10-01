@@ -258,4 +258,25 @@ class CarPropertyGatewayTest {
             gw.write(ClimateProperty.FRONT_DEFROST, 0, Long.MAX_VALUE) { false } shouldBe WriteResult.Aborted
             car.writes.isEmpty() shouldBe true
         }
+
+    @Test
+    @Verifies("SR-8", "SR-14")
+    fun `the guard is checked before every area, and stopping midway is reported as partial (re-audit 5, N22)`() =
+        runTest {
+            car.areas[CarIds.HVAC_FAN_SPEED] = intArrayOf(1, 2, 4)
+            val gw = gateway(realClimate = true)
+            var calls = 0
+            // Allowed for the first area only: the car starts moving after the first platform call.
+            gw.write(ClimateProperty.FAN_LEVEL, 0, Long.MAX_VALUE) { calls++ == 0 } shouldBe WriteResult.Partial
+            car.writes.size shouldBe 1
+        }
+
+    @Test
+    @Verifies("SR-14")
+    fun `some areas accepting and others refusing is partial, not a plain failure (re-audit 5, N8)`() =
+        runTest {
+            car.areas[CarIds.HVAC_FAN_SPEED] = intArrayOf(1, 2)
+            car.rejectArea = 2
+            gateway(realClimate = true).write(ClimateProperty.FAN_LEVEL, 3) shouldBe WriteResult.Partial
+        }
 }

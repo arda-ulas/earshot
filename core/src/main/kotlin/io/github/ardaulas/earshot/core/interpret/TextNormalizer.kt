@@ -91,7 +91,10 @@ object TextNormalizer {
                 .replace('-', ' ')
                 // Ordinary punctuation becomes a space; any other symbol (½, ℉, emoji, other scripts)
                 // becomes a word no rule knows, so it can never be dropped from an action (pre-review F4).
-                .replace(Regex("""[.,!?;:"()/]"""), " ")
+                // A slash left over (between words, "twenty/one") is a fraction or a choice, never a
+                // space: it becomes a word the rules refuse (re-audit 5, #2).
+                .replace("/", " slash ")
+                .replace(Regex("""[.,!?;:"()]"""), " ")
                 .replace(Regex("""[^a-z0-9\s']"""), " $UNKNOWN_SYMBOL ")
                 .replace("'", "")
         return joinNumberWords(folded.split(Regex("""\s+""")).filter { it.isNotEmpty() }).joinToString(" ")

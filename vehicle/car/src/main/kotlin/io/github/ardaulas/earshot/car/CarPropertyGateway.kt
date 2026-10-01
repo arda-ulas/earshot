@@ -121,14 +121,17 @@ class CarPropertyGateway(
                     ClimateProperty.REAR_DEFROST -> intArrayOf(CarIds.WINDOW_REAR)
                 }
             if (areas.isEmpty()) return@offload WriteResult.Rejected
-            // Last check before the first effect (audit re-check #8). Once started, all areas are written.
-            if (clock.millis() > notAfterMs) return@offload WriteResult.TimedOut
-            // The turn may have been cancelled, or the car may have started moving, while this call
-            // waited for the worker (re-audit 3, N12).
-            if (!guard()) return@offload WriteResult.Aborted
-            var ok = true
+            // The deadline and the guard (turn still waiting, driving state unchanged) are checked
+            // before every area's platform call, not only the first (audit re-check #8, re-audit 3
+            // N12, re-audit 5 N22). Stopping after some areas changed is reported as partial.
+            var written = 0
+            var rejected = 0
             for (area in areas) {
-                ok =
+                if (clock.millis() > notAfterMs) {
+                    return@offload if (written > 0) WriteResult.Partial else WriteResult.TimedOut
+                }
+                if (!guard()) return@offload if (written > 0) WriteResult.Partial else WriteResult.Aborted
+                val ok =
                     when (property) {
                         ClimateProperty.CABIN_TEMPERATURE_C -> {
                             car.writeFloat(CarIds.HVAC_TEMPERATURE_SET, area, value.toFloat())
@@ -149,9 +152,14 @@ class CarPropertyGateway(
                                 value == 1,
                             )
                         }
-                    } && ok
+                    }
+                if (ok) written++ else rejected++
             }
-            if (ok) WriteResult.Ok else WriteResult.Rejected
+            when {
+                rejected == 0 -> WriteResult.Ok
+                written == 0 -> WriteResult.Rejected
+                else -> WriteResult.Partial
+            }
         }
     }
 

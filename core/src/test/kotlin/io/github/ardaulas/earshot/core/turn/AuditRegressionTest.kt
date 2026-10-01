@@ -609,4 +609,32 @@ class AuditRegressionTest {
         io.github.ardaulas.earshot.core.speech.AudioGate
             .clean("Turn on the ac (just kidding music playing)") shouldBe "Turn on the ac just kidding music playing"
     }
+
+    @Test
+    @Verifies("SR-1", "SR-2", "SR-3")
+    fun `re-audit 5 1, 2 and N18 - polite questions, max with off, a slash between number words and inaudible speech never act`() {
+        val rules = RuleInterpreter()
+        for (text in listOf(
+            "Please will the defrost turn off.",
+            "please is the ac on",
+            "fan max off",
+            "set temperature to twenty/one",
+            "set the fan to 2/3",
+        )) {
+            (rules.interpret(text) is RuleResult.Matched) shouldBe false
+        }
+        val heard =
+            io.github.ardaulas.earshot.core.speech.AudioGate
+                .clean("Turn off the defrost. [inaudible]")
+        (rules.interpret(heard) is RuleResult.Matched) shouldBe false
+    }
+
+    @Test
+    @Verifies("SR-22")
+    fun `re-audit 5 N24 - a stale speed reading is not reported as the speed`() =
+        runTest {
+            val r = rig(DrivingState.MOVING)
+            r.vehicle.signalsOverride = SignalSample(0.0, Gear.PARK, atMs = -5_000)
+            r.say("how fast am I going").spoken shouldBe Responses.SPEED_UNAVAILABLE
+        }
 }

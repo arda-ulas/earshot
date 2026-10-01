@@ -38,6 +38,8 @@ object Responses {
 
     fun writeFailed(command: Command) = "I couldn't change the ${subject(command)}."
 
+    fun writePartial(command: Command) = "Only part of the ${subject(command)} changed. Please check it."
+
     fun writeUnconfirmed(command: Command) = "I couldn't confirm the change to the ${subject(command)}. Please check it."
 
     fun temperatureOutsideRange(celsius: Int) =

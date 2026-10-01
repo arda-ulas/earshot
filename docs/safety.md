@@ -375,9 +375,10 @@ parked. [10]
   are implemented in `:app` and reviewed, but no automated test drives `AudioRecord`, text-to-speech
   or the view-model lifecycle. Cancellation during model loading can still leave a loaded engine
   unowned until the process ends (re-audit finding N9, not fixed).
-- **Debug clip player while driving.** Debug builds keep the clip player (a clip number, arrows and a
-  play button, no file names) under the platform's UX restrictions, as the test instrument for the
-  moving rows of the manual test plan. Release builds have no clip player.
+- **Debug clip hook.** Under the platform's UX restrictions the screen has no test controls at all.
+  Debug builds instead accept a clip name in the launch intent (`--es earshot.debug.clip NAME`, used
+  by `scripts/drive-clips.py`); any app on the device could send it, but only a file already in the
+  app's clip folder can be played. Release builds have neither the clip player nor the hook.
 - **The single path to the vehicle is kept by review.** Today the main (non-test) sources have one
   call to `VehicleGateway.write`, in `TurnEngine`. No automated check enforces that.
 - **Simulated vehicle and emulator HAL.** On the phone, driving signals come from scripted scenarios.
@@ -385,11 +386,12 @@ parked. [10]
   bounds are those of the simulated cabin; the emulator's fan range is not mapped to the 0-5 model.
 - **Car-service calls cannot be interrupted.** Timeouts stop waiting for a platform call, but a call
   that has started runs to its end, so a timed-out write may still take effect. A write that has not
-  started yet checks first that the turn is still waiting for it and that the driving state is
-  unchanged, and does nothing otherwise; the reply says the
-  change could not be confirmed. Driving signals are polled off the main thread; if polling stalls,
+  started yet, and each further seat area of a write in progress, checks first that the turn is
+  still waiting and that the driving state is unchanged, and stops otherwise; the reply says the
+  change could not be confirmed, or was only partly made. Driving signals are polled off the main thread; if polling stalls,
   the state ages to unknown, and a separate loop with no car calls removes parked-only output. The
-  car connection and area discovery still run once on the main thread when the screen is created.
+  car connection and area discovery run off the main thread; until they finish, the vehicle reads
+  as unavailable and the driving state as unknown.
 - **How fresh "right before the write" is.** The re-check, and the gateway's guard just before the
   first effect, use the resolver's latest reading, not a new one. That reading is at most 1 s old; on
   the car API it is stamped with the time the poll started, and its speed value may be up to 2 s older
