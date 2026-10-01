@@ -49,24 +49,36 @@ object ClipProvider {
     ): String? {
         val clip = intent?.getStringExtra(EXTRA_CLIP)?.takeIf { it.endsWith(".wav") && '/' !in it } ?: return null
         val given = intent.getStringExtra(EXTRA_TOKEN) ?: return null
-        return clip.takeIf { MessageDigest.isEqual(given.toByteArray(), token(context).toByteArray()) }
+        // No valid stored token, or a malformed one given: nothing is obeyed (re-audit 7, N31).
+        val stored = runCatching { token(context) }.getOrNull() ?: return null
+        if (!TOKEN_FORMAT.matches(given) || !TOKEN_FORMAT.matches(stored)) return null
+        return clip.takeIf { MessageDigest.isEqual(given.toByteArray(), stored.toByteArray()) }
     }
 
     /** Creates the token at start-up, so a test driver can read it before its first request. */
     fun prepare(context: Context) {
-        token(context)
+        runCatching { token(context) }
     }
 
     /** Created once, 128 random bits, readable only by this app (and `run-as` on a debug build). */
     @Synchronized
     fun token(context: Context): String {
         val f = File(context.filesDir, TOKEN_FILE)
-        if (!f.isFile) {
-            val bytes = ByteArray(16).also { SecureRandom().nextBytes(it) }
-            f.writeText(bytes.joinToString("") { "%02x".format(it) })
+        val existing = if (f.isFile) runCatching { f.readText().trim() }.getOrNull() else null
+        if (existing != null && TOKEN_FORMAT.matches(existing)) return existing
+        // Missing, empty or damaged (for example the process died while writing): make a new one,
+        // written to a temporary file and moved into place, so a partial token is never the token.
+        val fresh = ByteArray(16).also { SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
+        val tmp = File(context.filesDir, "$TOKEN_FILE.tmp")
+        tmp.writeText(fresh)
+        if (!tmp.renameTo(f)) {
+            f.delete()
+            check(tmp.renameTo(f)) { "could not store the debug token" }
         }
-        return f.readText().trim()
+        return fresh
     }
+
+    private val TOKEN_FORMAT = Regex("[0-9a-f]{32}")
 
     private const val EXTRA_CLIP = "earshot.debug.clip"
     private const val EXTRA_TOKEN = "earshot.debug.token"

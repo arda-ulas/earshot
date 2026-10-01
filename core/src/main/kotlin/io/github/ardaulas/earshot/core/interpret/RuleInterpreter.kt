@@ -145,6 +145,17 @@ class RuleInterpreter {
                 RuleResult.Rejected("unclear number")
             }
 
+            // A temperature request has no on/off switch ("turn up the heat off"), and "by" with a
+            // set-point is an amount without a direction ("change the temperature by 21 degrees")
+            // (re-audit 7, N29).
+            isTemperature(actions.single()) && (ON.containsMatchIn(t) || OFF.containsMatchIn(t)) -> {
+                RuleResult.Rejected("conflicting")
+            }
+
+            BY.containsMatchIn(t) && !isAdjust(actions.single()) -> {
+                RuleResult.Rejected("unclear change")
+            }
+
             // A number written with a leading zero ("022") is not a plain value.
             LEADING_ZERO.containsMatchIn(t) -> {
                 RuleResult.Rejected("unclear number")
@@ -203,6 +214,9 @@ class RuleInterpreter {
             }
         }
     }
+
+    private fun isAdjust(r: RuleResult): Boolean =
+        (r is RuleResult.Matched && r.command is Command.AdjustTemp) || (r is RuleResult.OutOfRange && r.what == "temperature change")
 
     private fun isFan(r: RuleResult): Boolean =
         (r is RuleResult.Matched && r.command is Command.SetFan) || (r is RuleResult.OutOfRange && r.what == "fan speed")
@@ -408,6 +422,7 @@ class RuleInterpreter {
         // "back" is the rear window, except in "turn the defrost back on" (on again), where it
         // directly follows the thing switched (independent audit, NEW-1).
         val REAR = Regex("""\brear\b|(?<!\b(?:defrost|it|ac|fan|heat|heater) )\bback\b|\bback\b(?!\s+(?:on|off)\b)""")
+        val BY = Regex("""\bby\b""")
         val LEADING_ZERO = Regex("""\b0\d+\b""")
         val NUMBER_THEN_HOMOPHONE = Regex("""\b\d+\s+(to|too|for)\b""")
         val DEFERRAL =

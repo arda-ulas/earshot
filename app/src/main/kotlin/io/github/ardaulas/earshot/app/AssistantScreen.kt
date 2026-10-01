@@ -62,7 +62,7 @@ fun AssistantScreen(
         Column(Modifier.fillMaxSize().padding(padding)) {
             // Pinned above the scrolling content so it stays visible while the clip controls are used.
             // Debug caption and developer details are hidden unless parked (re-audit N6).
-            state.clipCaption?.takeIf { state.drivingState == DrivingState.PARKED }?.let {
+            state.clipCaption?.takeIf { state.parked }?.let {
                 Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp)) { RecordingCaption(it, state) }
             }
             AssistantContent(state, onPress, onRelease, viewModel)
@@ -218,7 +218,7 @@ private fun AssistantPanel(
 
             // Screen output exists only when the policy allowed it (parked), and is rendered only while
             // still parked (re-audit #7).
-            when (val screen = state.screen?.takeIf { state.drivingState == DrivingState.PARKED }) {
+            when (val screen = state.screen?.takeIf { state.parked }) {
                 is ScreenContent.Text -> {
                     Text(screen.text, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
                 }
@@ -263,7 +263,7 @@ private fun DeveloperPanel(
             // Under the platform's UX restrictions the activity is distraction optimized: no test
             // controls, model details or free text. Only a debug build keeps its clip player, the test
             // instrument for the moving rows of the manual test plan (re-audit 3, N6).
-            if ((state.uxRestricted == true || state.carApi) && state.drivingState != DrivingState.PARKED) {
+            if (state.uxRestricted == true || (state.carApi && !state.parked)) {
                 // No controls at all while restricted; debug clip tests use the launch intent instead
                 // (re-audit 5, N6).
                 Text("Hidden while driving (platform UX restrictions).", style = MaterialTheme.typography.bodySmall)
@@ -304,7 +304,7 @@ private fun DeveloperPanel(
             }
             val speed = state.speedKmh?.let { String.format(Locale.US, "%.0f km/h", it) } ?: "no signal"
             Text("Signals: $speed, gear ${state.gear?.name?.lowercase() ?: "no signal"} → ${state.drivingState}")
-            val parked = state.drivingState == DrivingState.PARKED
+            val parked = state.parked
             // Climate values and the last turn (transcript, reply, timings) only while parked (re-audit N6).
             if (parked) ClimateValues(state.climate) else Text("Details hidden while driving", style = MaterialTheme.typography.bodySmall)
             (state.models as? ModelStatus.Ready)?.takeIf { parked }?.let {

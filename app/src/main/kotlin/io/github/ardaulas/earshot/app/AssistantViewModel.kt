@@ -93,7 +93,14 @@ data class UiState(
     val realClimateWrites: Boolean = false,
     /** The platform's UX restrictions (car only; null on a phone). */
     val uxRestricted: Boolean? = null,
-)
+) {
+    /**
+     * Parked for display purposes: the driving state says parked and the platform's UX restrictions,
+     * when known, do not require a restricted screen. Either one alone hides parked-only content
+     * (re-audit 7, N30).
+     */
+    val parked: Boolean get() = drivingState == DrivingState.PARKED && uxRestricted != true
+}
 
 /**
  * Owns the pipeline for the single screen. On Android Automotive (the automotive feature present and
@@ -228,7 +235,9 @@ class AssistantViewModel(
                 }
             _state.update {
                 it.copy(
-                    drivingState = driving,
+                    // Read now, not the value from before the climate reads: an older result must
+                    // never relax a restriction the guard has already applied (re-audit 7, N30).
+                    drivingState = drivingStateNow(),
                     speedKmh = signals?.speedKmh,
                     gear = signals?.gear,
                     connected = vehicle.isAvailable,

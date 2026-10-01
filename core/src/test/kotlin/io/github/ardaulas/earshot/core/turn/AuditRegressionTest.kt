@@ -735,4 +735,22 @@ class AuditRegressionTest {
             (r.vehicle.read(ClimateProperty.FRONT_DEFROST) as ReadResult.Value).value shouldBe 1
             (r.vehicle.read(ClimateProperty.REAR_DEFROST) as ReadResult.Value).value shouldBe 0
         }
+
+    @Test
+    @Verifies("SR-1", "SR-3")
+    fun `re-audit 7 N29 - an amount without a direction and a heat request with a switch word never act`() =
+        runTest {
+            val r = rig(DrivingState.MOVING)
+            for (text in listOf(
+                "Change the temperature by 21 degrees.",
+                "Turn up the heat off.",
+                "make it warmer on",
+            )) {
+                val result = r.say(text)
+                (result.outcome in setOf(Outcome.REFUSED, Outcome.OUT_OF_RANGE)) shouldBe true
+            }
+            r.vehicle.writeCount shouldBe 0
+            r.lm.callCount shouldBe 0
+            RuleInterpreter().interpret("turn the temperature up by 2 degrees") shouldBe RuleResult.Matched(Command.AdjustTemp(2))
+        }
 }

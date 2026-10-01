@@ -66,6 +66,10 @@ test clips unless stated otherwise. Nothing here has run in a vehicle.
     again); "more" after a fan level, modal and first-person sentences ("the defrost will turn off",
     "I set the fan to 3"), a long dash or an apostrophe between numbers, and a leading zero are
     refused.
+  - A temperature request with an on/off word, and "by" with a set-point, are refused; the signal
+    poll no longer publishes a driving state from before its climate reads, and active UX
+    restrictions alone hide parked-only content; the debug token must be well formed and is created
+    atomically; a recorder that stopped on its own before key-up fails the capture.
   - Traces: a hard 1 MB per file, expired files deleted at start-up as well, and a turn that could
     not be stored says so.
   - A zero speed with no gear reading is unknown, not parked; a relative change from a temperature

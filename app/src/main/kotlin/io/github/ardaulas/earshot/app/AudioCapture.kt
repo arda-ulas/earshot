@@ -132,6 +132,11 @@ class AudioCapture(
         val s = session ?: return Captured(FloatArray(0), clock.millis(), clock.millis(), false)
         session = null
         val releasedAt = clock.millis()
+        // Asked before stopping it, and independent of the reader thread: a recorder that is no
+        // longer recording at key-up stopped on its own, so the audio is incomplete whatever the
+        // reader had time to note (re-audit 7, N13).
+        val stoppedByItself =
+            s.limitReachedAtMs == null && runCatching { s.record.recordingState != AudioRecord.RECORDSTATE_RECORDING }.getOrDefault(true)
         try {
             runCatching { s.record.stop() }
             withContext(NonCancellable) { s.job?.join() }
@@ -149,7 +154,7 @@ class AudioCapture(
         val since = s.firstSamplesAtMs ?: s.startMs
         val heldSamples = (releasedAt - since) * AudioGate.SAMPLE_RATE / 1000
         val missing = limit == null && s.length < heldSamples - AudioGate.SAMPLE_RATE * 15 / 100
-        val failed = s.failedAtMs != null || missing
+        val failed = s.failedAtMs != null || missing || (stoppedByItself && limit == null)
         if (failed) pcm.fill(0f)
         return Captured(pcm, s.startMs, limit ?: s.failedAtMs ?: releasedAt, overflowed = limit != null, failed = failed)
     }

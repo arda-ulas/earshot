@@ -370,8 +370,9 @@ parked. [10]
   caption hide transcripts, replies and climate values unless parked, which also covers Android
   Automotive's `UX_RESTRICTIONS_NO_VOICE_TRANSCRIPTION` flag. [12]
 - **App-level fixes without automated tests.** Capture overflow and microphone failure (the whole
-  utterance is refused; a read that ends early is detected from the samples missing against the time
-  held, so a gap shorter than about 150 ms is not detected), stopping parked-only speech when the car starts moving, confirmation only
+  utterance is refused; a read that ends early is detected from an error code, from the recorder no
+  longer recording at key-up, or from samples missing against the time held, so what stays undetected
+  is a gap under about 150 ms while the recorder still reports recording), stopping parked-only speech when the car starts moving, confirmation only
   after the question was spoken, teardown during inference, and cancellation during model loading
   are implemented in `:app` and reviewed, but no automated test drives `AudioRecord`, text-to-speech
   or the view-model lifecycle. Cancellation during model loading can still leave a loaded engine
