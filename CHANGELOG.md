@@ -70,6 +70,10 @@ test clips unless stated otherwise. Nothing here has run in a vehicle.
     poll no longer publishes a driving state from before its climate reads, and active UX
     restrictions alone hide parked-only content; the debug token must be well formed and is created
     atomically; a recorder that stopped on its own before key-up fails the capture.
+  - Any "in a ...", "for a ..." or "in 5 ..." is a request for later and is refused; the no-speech
+    text fallback follows the same parked rule as every other output; the output guard computes the
+    state inside its update, so it cannot publish an older one; an empty microphone read that began
+    well before key-up fails the capture.
   - Traces: a hard 1 MB per file, expired files deleted at start-up as well, and a turn that could
     not be stored says so.
   - A zero speed with no gear reading is unknown, not parked; a relative change from a temperature

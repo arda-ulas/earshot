@@ -753,4 +753,24 @@ class AuditRegressionTest {
             r.lm.callCount shouldBe 0
             RuleInterpreter().interpret("turn the temperature up by 2 degrees") shouldBe RuleResult.Matched(Command.AdjustTemp(2))
         }
+
+    @Test
+    @Verifies("SR-1")
+    fun `re-audit 8 N32 - a request for later never acts now`() =
+        runTest {
+            val r = rig(DrivingState.PARKED)
+            for (text in listOf(
+                "Turn on the AC in a little bit.",
+                "Make it warmer in a little bit.",
+                "Turn off the defrost in a little bit.",
+                "turn on the ac in 5 minutes",
+                "turn off the defrost for a short while",
+                "make it warmer tonight",
+            )) {
+                r.say(text).outcome shouldBe Outcome.REFUSED
+            }
+            r.vehicle.writeCount shouldBe 0
+            r.lm.callCount shouldBe 0
+            RuleInterpreter().interpret("make it a little bit warmer") shouldBe RuleResult.Matched(Command.AdjustTemp(+1))
+        }
 }

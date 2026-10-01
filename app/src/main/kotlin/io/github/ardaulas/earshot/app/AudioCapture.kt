@@ -51,6 +51,12 @@ class AudioCapture(
 
         @Volatile var failedAtMs: Long? = null
 
+        /**
+         * When the read that returned nothing (zero or an error code) had started. Well before
+         * key-up, it means audio was lost; around or after key-up, it is the normal end.
+         */
+        @Volatile var emptyReadStartedAtMs: Long? = null
+
         /** When the first samples arrived: recorder start-up time is not audio missing. */
         @Volatile var firstSamplesAtMs: Long? = null
         var job: Job? = null
@@ -106,13 +112,18 @@ class AudioCapture(
             scope.launch(Dispatchers.IO) {
                 try {
                     while (isActive && s.length < s.buffer.size) {
+                        // Noted before the call: a zero read that began before key-up is a failure, and
+                        // this does not depend on when the reader gets to look at the result
+                        // (re-audit 8, N13).
+                        val readStartedAtMs = clock.millis()
                         val n = r.read(s.buffer, s.length, minOf(CHUNK, s.buffer.size - s.length), AudioRecord.READ_BLOCKING)
+                        if (n <= 0) s.emptyReadStartedAtMs = readStartedAtMs
                         if (n <= 0) {
                             // An error, or the recorder stopped. After key-up that is the normal end;
                             // before it, the utterance is incomplete (re-audit 3, N13).
-                            // A negative value is an error code, whatever key-up did meanwhile; zero
-                            // is the normal end only once key-up has taken the session.
-                            if (n < 0 || session === s) s.failedAtMs = clock.millis()
+                            // Seen while the session is still open, it is a failure now (and the
+                            // microphone is let go); stop() also judges it by when the read began.
+                            if (session === s) s.failedAtMs = clock.millis()
                             break
                         }
                         if (s.firstSamplesAtMs == null) s.firstSamplesAtMs = clock.millis() - n * 1000L / AudioGate.SAMPLE_RATE
@@ -154,7 +165,8 @@ class AudioCapture(
         val since = s.firstSamplesAtMs ?: s.startMs
         val heldSamples = (releasedAt - since) * AudioGate.SAMPLE_RATE / 1000
         val missing = limit == null && s.length < heldSamples - AudioGate.SAMPLE_RATE * 15 / 100
-        val failed = s.failedAtMs != null || missing || (stoppedByItself && limit == null)
+        val zeroBeforeKeyUp = limit == null && (s.emptyReadStartedAtMs?.let { it < releasedAt - GAP_TOLERANCE_MS } ?: false)
+        val failed = s.failedAtMs != null || missing || zeroBeforeKeyUp || (stoppedByItself && limit == null)
         if (failed) pcm.fill(0f)
         return Captured(pcm, s.startMs, limit ?: s.failedAtMs ?: releasedAt, overflowed = limit != null, failed = failed)
     }
@@ -170,5 +182,8 @@ class AudioCapture(
 
     private companion object {
         const val CHUNK = 1_600
+
+        /** Audio arrives in bursts; a read that began this close to key-up may rightly be empty. */
+        const val GAP_TOLERANCE_MS = 150L
     }
 }

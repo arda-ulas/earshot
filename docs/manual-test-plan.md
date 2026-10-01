@@ -171,6 +171,13 @@ restrictions the developer view shows only "Hidden while driving". A clip reques
 and one with no token, started no turn and changed nothing. The car API connected in the background
 at start-up as intended.
 
+Capture path check on 2026-10-01 (same emulator, host audio input, nobody speaking, so this is not a
+`mic` voice result): the push-to-talk button was held by an injected touch for 2.5 s and for 0.9 s.
+Both captures reached the turn engine as `MIC` turns with an empty transcript and were answered with
+the re-prompt and then the stop message; neither was refused as a microphone failure. This checks
+that the capture-failure rules do not reject an ordinary press and release; it says nothing about
+recognising a voice.
+
 Speech-to-text on this AVD was 0.7–1.3 s per clip with the host quiet, and up to 7.8 s while the
 host was busy building (same laptop; not an in-vehicle figure). The phone emulator regression
 (M-rows) after the audit fixes is recorded separately below when run.

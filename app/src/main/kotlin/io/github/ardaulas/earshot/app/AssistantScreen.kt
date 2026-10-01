@@ -155,7 +155,9 @@ private fun AssistantPanel(
     onPress: () -> Unit,
     onRelease: () -> Unit,
 ) {
-    val moving = state.drivingState.effective == DrivingState.MOVING
+    // Every assistant-output branch uses the same predicate: parked, and no active UX restriction
+    // (re-audit 8, N33).
+    val moving = !state.parked
     Card(Modifier.fillMaxWidth()) {
         Column(
             Modifier.fillMaxWidth().padding(20.dp),

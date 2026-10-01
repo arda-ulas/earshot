@@ -425,8 +425,10 @@ class RuleInterpreter {
         val BY = Regex("""\bby\b""")
         val LEADING_ZERO = Regex("""\b0\d+\b""")
         val NUMBER_THEN_HOMOPHONE = Regex("""\b\d+\s+(to|too|for)\b""")
+
+        // Any "in a ...", "for a ...", "in 5 ...": a time, however it is worded (re-audit 8, N32).
         val DEFERRAL =
-            Regex("""\b(later|soon|after|until|when|in a (bit|minute|moment|second|while)|for a (bit|minute|moment|while))\b""")
+            Regex("""\b(later|soon|after|until|when|tonight|tomorrow|(in|for) (a|an|\d+)\b)""")
         val TEMP_UNIT = Regex("""\b(degrees?|celsius)\b""")
         val DEFROST_TARGET = Regex("""\bdefrost\b""")
 

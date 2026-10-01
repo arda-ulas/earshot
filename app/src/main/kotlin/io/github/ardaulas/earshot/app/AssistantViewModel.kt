@@ -260,11 +260,10 @@ class AssistantViewModel(
      */
     private suspend fun guardParkedOutput() {
         while (true) {
-            val driving = drivingStateNow()
-            if (driving != DrivingState.PARKED) revokeParkedOutput()
-            if (_state.value.drivingState != driving || _state.value.uxRestricted != uxRestricted()) {
-                _state.update { it.copy(drivingState = driving, uxRestricted = uxRestricted()) }
-            }
+            if (drivingStateNow() != DrivingState.PARKED) revokeParkedOutput()
+            // Computed inside the update, so it is recomputed if another writer got in first: no
+            // saved state is ever published over a newer one (re-audit 8, N30).
+            _state.update { it.copy(drivingState = drivingStateNow(), uxRestricted = uxRestricted()) }
             delay(GUARD_MS)
         }
     }

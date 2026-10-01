@@ -371,8 +371,9 @@ parked. [10]
   Automotive's `UX_RESTRICTIONS_NO_VOICE_TRANSCRIPTION` flag. [12]
 - **App-level fixes without automated tests.** Capture overflow and microphone failure (the whole
   utterance is refused; a read that ends early is detected from an error code, from the recorder no
-  longer recording at key-up, or from samples missing against the time held, so what stays undetected
-  is a gap under about 150 ms while the recorder still reports recording), stopping parked-only speech when the car starts moving, confirmation only
+  longer recording at key-up, from an empty read that began more than 150 ms before key-up, or from
+  samples missing against the time held, so what stays undetected is a gap under about 150 ms while
+  the recorder still reports recording), stopping parked-only speech when the car starts moving, confirmation only
   after the question was spoken, teardown during inference, and cancellation during model loading
   are implemented in `:app` and reviewed, but no automated test drives `AudioRecord`, text-to-speech
   or the view-model lifecycle. Cancellation during model loading can still leave a loaded engine
@@ -400,7 +401,7 @@ parked. [10]
   the car API it is stamped with the time the poll started, and its speed value may be up to 2 s older
   by the vehicle's own timestamp (a value stamped in the future is refused). The gear value has no
   age check: it is an on-change property, whose timestamp is when the gear last changed, so an old
-  timestamp is normal and a stale value cannot be told apart. Parked needs park and a fresh zero
+  timestamp is normal and a stale value cannot be told apart. Parked needs park (or neutral held at zero speed for 2 s), no active UX restriction, and a fresh zero
   speed, so a stale park value with a moving car still reads as moving; a stale park value with a car
   stopped in drive would read as parked.
 - **Late re-prompts under host load.** whisper.cpp checks its abort flag only after the encoder
