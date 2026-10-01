@@ -65,11 +65,11 @@ class DrivingStateResolverTest {
     }
 
     @Test
-    fun `a null sample update leaves the resolver unchanged`() {
+    fun `losing every signal is unknown at once, not the last state`() {
         val resolver = DrivingStateResolver()
         resolver.update(SignalSample(0.0, Gear.PARK, atMs = 0), 0)
         resolver.update(null, 0)
-        resolver.current(0) shouldBe DrivingState.PARKED
+        resolver.current(0) shouldBe DrivingState.UNKNOWN
     }
 
     @Test

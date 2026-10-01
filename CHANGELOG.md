@@ -60,6 +60,8 @@ test clips unless stated otherwise. Nothing here has run in a vehicle.
     ("twenty, one"), a number followed by "to" or "for", "max" with the heat, and a deferral ("in a
     bit") are refused; "turn the defrost back on" means the front defrost; the write guard also
     checks the clock, since the timeout can fire late on a busy thread.
+  - Losing every driving signal is unknown at once, not the last state for up to 1 s; a short reply
+    (an action's read-back) is always spoken, even if the car started moving meanwhile.
   - Traces: a hard 1 MB per file, expired files deleted at start-up as well, and a turn that could
     not be stored says so.
   - A zero speed with no gear reading is unknown, not parked; a relative change from a temperature

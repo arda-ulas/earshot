@@ -469,7 +469,9 @@ class AssistantViewModel(
                             message = result.traceError?.let { e -> "Trace not stored: $e" },
                         )
                     }
-                    parkedOnlyOutput = result.screen != null || result.spoken.split(" ").size > Policy.MAX_WORDS_WHILE_MOVING
+                    // Only a long reply is parked-only speech; a short one (an action's read-back) is
+                    // always spoken, even if the car started moving. Screen content is revoked separately.
+                    parkedOnlyOutput = result.spoken.split(" ").size > Policy.MAX_WORDS_WHILE_MOVING
                     // Capture stays off until speech is done (SG-8). Parked-only speech is not started
                     // once the car is no longer parked; if it moves during speech, the guard stops it.
                     val spoken =

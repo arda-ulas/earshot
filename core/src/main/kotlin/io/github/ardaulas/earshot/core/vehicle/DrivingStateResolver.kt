@@ -36,7 +36,15 @@ class DrivingStateResolver(
         sample: SignalSample?,
         nowMs: Long,
     ) {
-        if (sample == null || sample.atMs > nowMs) return
+        // No reading at all (the connection or both signals are gone) is unknown at once, not the
+        // last state until it ages out (re-audit 7, interim note).
+        if (sample == null) {
+            latest = null
+            latestValid = false
+            zeroSinceMs = null
+            return
+        }
+        if (sample.atMs > nowMs) return
         val previous = latest
         // Readings that go back in time are ignored; they cannot extend or restart anything.
         if (previous != null && sample.atMs < previous.atMs) return
