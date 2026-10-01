@@ -773,4 +773,50 @@ class AuditRegressionTest {
             r.lm.callCount shouldBe 0
             RuleInterpreter().interpret("make it a little bit warmer") shouldBe RuleResult.Matched(Command.AdjustTemp(+1))
         }
+
+    @Test
+    @Verifies("SR-1", "SR-3")
+    fun `only a complete listed sentence may act - leftovers, cut-off tails, other nouns and vague wordings are refused`() =
+        runTest {
+            val r = rig(DrivingState.PARKED)
+            for (text in listOf(
+                "Turn off the defrost in just a bit.",
+                "turn on the ac in just a bit",
+                "turn off the fan for just a bit",
+                "set the temperature to 22 in just a bit",
+                "make it warmer in just a bit",
+                "turn on the ac in little bit",
+                "turn off the defrost for the bit",
+                "turn off the defrost in",
+                "turn off the ac for",
+                "set the temperature to 22 at",
+                "turn off the fan at",
+                "turn down the ac by 2",
+                "turn up the ac 2",
+                "increase the ac by 2",
+                "raise the speed by 2",
+                "speed up 2",
+                "turn the air up 2",
+                "lower the defrost 2",
+                "Turn back off the defrost.",
+                "turn back on the defrost",
+                "turn the defrost in the car back on",
+                "turn on the ac down a bit",
+                "defrost down",
+                "turn off the defrost down",
+                "put it in the cooler",
+                "get me a cooler",
+                "the cooler",
+                "let me turn on the ac",
+                "20 degrees",
+                "turn on the ac if it gets hot",
+                "turn on the ac for the passenger",
+                "maybe turn on the ac",
+                "set the temperature to 21 or 22",
+            )) {
+                val result = r.say(text)
+                (result.outcome == Outcome.ACTED) shouldBe false
+            }
+            r.vehicle.writeCount shouldBe 0
+        }
 }

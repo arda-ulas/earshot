@@ -171,7 +171,8 @@ private fun AssistantPanel(
 
                 is ModelStatus.Disabled -> {
                     Text("Assistant disabled", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
-                    Text(models.reason, textAlign = TextAlign.Center)
+                    // The reason is free text: only while parked, like every other detail.
+                    if (state.parked) Text(models.reason, textAlign = TextAlign.Center)
                 }
 
                 is ModelStatus.Ready -> {
@@ -216,7 +217,7 @@ private fun AssistantPanel(
                 Text(label, color = MaterialTheme.colorScheme.surface, textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold)
             }
             if (state.awaitingConfirmation) Text("Waiting for yes or no", fontWeight = FontWeight.SemiBold)
-            state.message?.let { Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center) }
+            state.message?.takeIf { state.parked }?.let { Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center) }
 
             // Screen output exists only when the policy allowed it (parked), and is rendered only while
             // still parked (re-audit #7).

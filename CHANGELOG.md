@@ -16,6 +16,10 @@ test clips unless stated otherwise. Nothing here has run in a vehicle.
   not reproducible with the image's hooks. The phone path is unchanged.
 - An external hostile review of v0.2.1 found 15 P1 and 8 P2 issues, and a re-review of the first fixes
   found more. Each P1 has a regression test. Main changes:
+  - Only a complete listed sentence may act: a command found by the keyword rules must also match an
+    allowlist of whole-utterance patterns (`CommandGrammar`) that gives the same command. Deferrals,
+    conditions, cut-off tails, stray words and other nouns ("turn down the AC by 2") are refused
+    because nothing fits, not because each was listed.
   - Rules refuse negated, questioning, multi-request, conflicting, unsupported-target and
     unsupported-unit requests, more than one number, unknown symbols, and words outside the action
     vocabulary; signed or fractional numbers are out of range, never rounded to a valid value; "3

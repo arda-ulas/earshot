@@ -73,145 +73,153 @@ class RuleInterpreter {
                 else -> RuleResult.NoMatch
             }
         }
-        return when {
-            NEGATION.containsMatchIn(t) -> {
-                RuleResult.Rejected("negated")
-            }
+        val found =
+            when {
+                NEGATION.containsMatchIn(t) -> {
+                    RuleResult.Rejected("negated")
+                }
 
-            raw.endsWith("?") || QUESTION.containsMatchIn(t) -> {
-                RuleResult.Rejected("question")
-            }
+                raw.endsWith("?") || QUESTION.containsMatchIn(t) -> {
+                    RuleResult.Rejected("question")
+                }
 
-            unsupportedTarget(t) -> {
-                RuleResult.Rejected("unsupported target")
-            }
+                unsupportedTarget(t) -> {
+                    RuleResult.Rejected("unsupported target")
+                }
 
-            UNSUPPORTED_UNIT.containsMatchIn(t) -> {
-                RuleResult.Rejected("unsupported unit")
-            }
+                UNSUPPORTED_UNIT.containsMatchIn(t) -> {
+                    RuleResult.Rejected("unsupported unit")
+                }
 
-            actions.size > 1 || CONJUNCTION.containsMatchIn(t) -> {
-                RuleResult.Rejected("more than one action")
-            }
+                actions.size > 1 || CONJUNCTION.containsMatchIn(t) -> {
+                    RuleResult.Rejected("more than one action")
+                }
 
-            // More than one sentence, more than one command verb, or the same thing named twice is
-            // more than one request, even for one feature ("set the fan to 3; turn the fan off")
-            // (re-audit 4, #1).
-            SENTENCE_BREAK.containsMatchIn(raw.replace(ABBREVIATED_AC, "ac")) -> {
-                RuleResult.Rejected("more than one action")
-            }
+                // More than one sentence, more than one command verb, or the same thing named twice is
+                // more than one request, even for one feature ("set the fan to 3; turn the fan off")
+                // (re-audit 4, #1).
+                SENTENCE_BREAK.containsMatchIn(raw.replace(ABBREVIATED_AC, "ac")) -> {
+                    RuleResult.Rejected("more than one action")
+                }
 
-            COMMAND_VERB.findAll(t).count() > 1 -> {
-                RuleResult.Rejected("more than one action")
-            }
+                COMMAND_VERB.findAll(t).count() > 1 -> {
+                    RuleResult.Rejected("more than one action")
+                }
 
-            REPEATABLE
-                .findAll(t)
-                .map { it.value }
-                .groupingBy { it }
-                .eachCount()
-                .any { it.value > 1 } -> {
-                RuleResult.Rejected("more than one action")
-            }
+                REPEATABLE
+                    .findAll(t)
+                    .map { it.value }
+                    .groupingBy { it }
+                    .eachCount()
+                    .any { it.value > 1 } -> {
+                    RuleResult.Rejected("more than one action")
+                }
 
-            // Every word that sets a value must be the one the command used: a number next to off,
-            // max or an on/off switch is a second value, never dropped ("fan to 3 off", "turn off the
-            // ac at 5") (pre-review of re-audit 5, #1).
-            NUMBER.containsMatchIn(t) && !usesNumber(actions.single()) -> {
-                RuleResult.Rejected("unused value")
-            }
+                // Every word that sets a value must be the one the command used: a number next to off,
+                // max or an on/off switch is a second value, never dropped ("fan to 3 off", "turn off the
+                // ac at 5") (pre-review of re-audit 5, #1).
+                NUMBER.containsMatchIn(t) && !usesNumber(actions.single()) -> {
+                    RuleResult.Rejected("unused value")
+                }
 
-            NUMBER.containsMatchIn(t) && (OFF.containsMatchIn(t) || FAN_MAX_WORD.containsMatchIn(t)) -> {
-                RuleResult.Rejected("more than one value")
-            }
+                NUMBER.containsMatchIn(t) && (OFF.containsMatchIn(t) || FAN_MAX_WORD.containsMatchIn(t)) -> {
+                    RuleResult.Rejected("more than one value")
+                }
 
-            FAN_MAX_WORD.containsMatchIn(t) && (OFF.containsMatchIn(t) || ON.containsMatchIn(t)) -> {
-                RuleResult.Rejected("conflicting")
-            }
+                FAN_MAX_WORD.containsMatchIn(t) && (OFF.containsMatchIn(t) || ON.containsMatchIn(t)) -> {
+                    RuleResult.Rejected("conflicting")
+                }
 
-            // "max" belongs to the fan only ("turn up the heat to max" is not a step of 1).
-            FAN_MAX_WORD.containsMatchIn(t) && !isFan(actions.single()) -> {
-                RuleResult.Rejected("unused value")
-            }
+                // "max" belongs to the fan only ("turn up the heat to max" is not a step of 1).
+                FAN_MAX_WORD.containsMatchIn(t) && !isFan(actions.single()) -> {
+                    RuleResult.Rejected("unused value")
+                }
 
-            // A direction with a fan level ("turn down the fan 4") is a change, not that level; and a
-            // direction with fan off is a second request (pre-review of re-audit 7, #1).
-            isFan(actions.single()) && (WARMER_WORD.containsMatchIn(t) || COOLER_WORD.containsMatchIn(t)) -> {
-                RuleResult.Rejected("unclear change")
-            }
+                // A direction with a fan level ("turn down the fan 4") is a change, not that level; and a
+                // direction with fan off is a second request (pre-review of re-audit 7, #1).
+                isFan(actions.single()) && (WARMER_WORD.containsMatchIn(t) || COOLER_WORD.containsMatchIn(t)) -> {
+                    RuleResult.Rejected("unclear change")
+                }
 
-            // A number followed by "to", "too" or "for" may be a misheard "22" or "24".
-            NUMBER_THEN_HOMOPHONE.containsMatchIn(t) -> {
-                RuleResult.Rejected("unclear number")
-            }
+                // A number followed by "to", "too" or "for" may be a misheard "22" or "24".
+                NUMBER_THEN_HOMOPHONE.containsMatchIn(t) -> {
+                    RuleResult.Rejected("unclear number")
+                }
 
-            // A temperature request has no on/off switch ("turn up the heat off"), and "by" with a
-            // set-point is an amount without a direction ("change the temperature by 21 degrees")
-            // (re-audit 7, N29).
-            isTemperature(actions.single()) && (ON.containsMatchIn(t) || OFF.containsMatchIn(t)) -> {
-                RuleResult.Rejected("conflicting")
-            }
+                // A temperature request has no on/off switch ("turn up the heat off"), and "by" with a
+                // set-point is an amount without a direction ("change the temperature by 21 degrees")
+                // (re-audit 7, N29).
+                isTemperature(actions.single()) && (ON.containsMatchIn(t) || OFF.containsMatchIn(t)) -> {
+                    RuleResult.Rejected("conflicting")
+                }
 
-            BY.containsMatchIn(t) && !isAdjust(actions.single()) -> {
-                RuleResult.Rejected("unclear change")
-            }
+                BY.containsMatchIn(t) && !isAdjust(actions.single()) -> {
+                    RuleResult.Rejected("unclear change")
+                }
 
-            // A number written with a leading zero ("022") is not a plain value.
-            LEADING_ZERO.containsMatchIn(t) -> {
-                RuleResult.Rejected("unclear number")
-            }
+                // A number written with a leading zero ("022") is not a plain value.
+                LEADING_ZERO.containsMatchIn(t) -> {
+                    RuleResult.Rejected("unclear number")
+                }
 
-            // Later is not now ("turn off the defrost in a bit").
-            DEFERRAL.containsMatchIn(t) -> {
-                RuleResult.Rejected("deferred")
-            }
+                // Later is not now ("turn off the defrost in a bit").
+                DEFERRAL.containsMatchIn(t) -> {
+                    RuleResult.Rejected("deferred")
+                }
 
-            // One target, one direction, one number: a second request must never vanish silently, and
-            // a number must never be truncated to a valid one (pre-review F1, F2, F4).
-            targets(t) > 1 -> {
-                RuleResult.Rejected("more than one action")
-            }
+                // One target, one direction, one number: a second request must never vanish silently, and
+                // a number must never be truncated to a valid one (pre-review F1, F2, F4).
+                targets(t) > 1 -> {
+                    RuleResult.Rejected("more than one action")
+                }
 
-            ON.containsMatchIn(t) && OFF.containsMatchIn(t) -> {
-                RuleResult.Rejected("conflicting")
-            }
+                ON.containsMatchIn(t) && OFF.containsMatchIn(t) -> {
+                    RuleResult.Rejected("conflicting")
+                }
 
-            // One zone: front and rear together are two requests; a zone word on anything but the
-            // defrost asks for a zone Earshot does not have ("set the rear temperature") (re-audit 3, #1).
-            FRONT.containsMatchIn(t) && REAR.containsMatchIn(t) -> {
-                RuleResult.Rejected("more than one action")
-            }
+                // One zone: front and rear together are two requests; a zone word on anything but the
+                // defrost asks for a zone Earshot does not have ("set the rear temperature") (re-audit 3, #1).
+                FRONT.containsMatchIn(t) && REAR.containsMatchIn(t) -> {
+                    RuleResult.Rejected("more than one action")
+                }
 
-            (FRONT.containsMatchIn(t) || REAR.containsMatchIn(t)) && !DEFROST_TARGET.containsMatchIn(t) -> {
-                RuleResult.Rejected("unsupported zone")
-            }
+                (FRONT.containsMatchIn(t) || REAR.containsMatchIn(t)) && !DEFROST_TARGET.containsMatchIn(t) -> {
+                    RuleResult.Rejected("unsupported zone")
+                }
 
-            // A temperature unit belongs to a temperature only ("fan to 3 celsius").
-            TEMP_UNIT.containsMatchIn(t) && !isTemperature(actions.single()) -> {
-                RuleResult.Rejected("unit does not fit")
-            }
+                // A temperature unit belongs to a temperature only ("fan to 3 celsius").
+                TEMP_UNIT.containsMatchIn(t) && !isTemperature(actions.single()) -> {
+                    RuleResult.Rejected("unit does not fit")
+                }
 
-            WARMER_WORD.containsMatchIn(t) && COOLER_WORD.containsMatchIn(t) -> {
-                RuleResult.Rejected("conflicting")
-            }
+                WARMER_WORD.containsMatchIn(t) && COOLER_WORD.containsMatchIn(t) -> {
+                    RuleResult.Rejected("conflicting")
+                }
 
-            NUMBER.findAll(t).count() > 1 -> {
-                RuleResult.Rejected("more than one number")
-            }
+                NUMBER.findAll(t).count() > 1 -> {
+                    RuleResult.Rejected("more than one number")
+                }
 
-            // Deny by default: an action utterance may contain only command vocabulary, so "the pizza
-            // should be warmer" cannot change the cabin (audit re-check #1).
-            t.split(" ").any { it !in ACTION_VOCABULARY && !it.all(Char::isDigit) } -> {
-                RuleResult.Rejected("unrecognised words")
-            }
+                // Deny by default: an action utterance may contain only command vocabulary, so "the pizza
+                // should be warmer" cannot change the cabin (audit re-check #1).
+                t.split(" ").any { it !in ACTION_VOCABULARY && !it.all(Char::isDigit) } -> {
+                    RuleResult.Rejected("unrecognised words")
+                }
 
-            INVALID_NUMBER.containsMatchIn(t) -> {
-                invalidNumber(actions.single())
-            }
+                INVALID_NUMBER.containsMatchIn(t) -> {
+                    invalidNumber(actions.single())
+                }
 
-            else -> {
-                actions.single()
+                else -> {
+                    actions.single()
+                }
             }
+        // The keyword reading above must be confirmed by the allowlist of complete sentences: only
+        // a request that spells out exactly this command, with nothing left over, may act.
+        return if (found is RuleResult.Matched && CommandGrammar.parse(t) != found) {
+            RuleResult.Rejected("not a complete request")
+        } else {
+            found
         }
     }
 

@@ -285,10 +285,12 @@ What the code does:
   whenever not parked, the developer view shows no controls; on the phone it keeps its test controls
   but hides climate values and the last turn, and the debug caption is hidden. A result shown while parked is not
   rendered once the car is no longer parked, and a long parked reply is stopped.
-- Confidence below 0.5 or unknown: ask once to repeat, then stop. The rules refuse the negated,
-  questioning, multi-part, conflicting and unsupported-target or unsupported-zone requests they
-  recognise, and any word outside the command vocabulary; a hand-written rule set cannot recognise
-  every phrasing, which is why the harness exists. One write per turn, no retry; the reply comes from
+- Confidence below 0.5 or unknown: ask once to repeat, then stop. A request acts only if two
+  independent readings agree: the keyword rules, which refuse negated, questioning, multi-part,
+  conflicting, unsupported-target and unsupported-zone requests, and an allowlist of complete
+  sentences (`CommandGrammar`), which must match the whole utterance with nothing left over. A
+  phrasing that is not on the list is refused; that costs recall (the harness measures it), and a
+  listed sentence that speech-to-text mishears into another listed sentence still acts. One write per turn, no retry; the reply comes from
   reading the value back. The 5 s deadline and the driving state are re-checked before each write,
   and again by the gateway just before the first effect, where a cancelled turn or a changed driving
   state stops it; the driving state used is the latest polled reading, not a new one. On the car API
