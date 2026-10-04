@@ -59,6 +59,9 @@ hold the button, or F2 / the voice-assist key (stands in for a steering-wheel bu
   -> Android text-to-speech: reply built from the read-back value; no capture while speaking
 ```
 
+Module and turn diagrams, the policy table and a map of the code:
+[docs/architecture.md](docs/architecture.md).
+
 ## What is simulated and what is not
 
 | Part | In this phase | Not in this phase |
@@ -268,7 +271,7 @@ Decisions ([index](docs/adr/README.md)):
 | `app/` | Compose UI (single activity), audio capture, text-to-speech, developer view |
 | `models/` | `manifest.json` only: pinned revision, size, SHA-256 and licence per model |
 | `scripts/` | `fetch-models.sh`, `push-models.sh`, `make-clips.sh`, `traceability.py` |
-| `docs/` | Safety, threat model, requirements, test plan, ADRs, language-model evaluation, AI log |
+| `docs/` | Architecture, safety, threat model, requirements, test plan, ADRs, language-model evaluation, AI log |
 
 ## Roadmap
 

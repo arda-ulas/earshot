@@ -198,3 +198,17 @@ how.
   it leads to.
 - **Verified:** the reviewers checked the documents against the brief, the code and the fact-check
   list. CI on the pull request: pending.
+
+## 2026-10-04
+
+### Architecture page
+- **Asked:** a page that shows how the project is put together at v0.2.1, with diagrams, for readers
+  of the repository.
+- **Produced:** [architecture.md](architecture.md): a module diagram, a diagram of one turn, the
+  policy table, the boundaries the design relies on and a map of the code; a link from the README.
+  No code changed.
+- **Changed or rejected:** nothing yet. Pending before merge: the author's read of the page.
+- **Verified:** the agent checked the module dependencies against the Gradle build files, the policy
+  table and precedence against `Policy.kt`, the time limits against `TurnConfig` and
+  `LmInterpreter`, and the single `VehicleGateway.write` call site with a search of the sources, all
+  at the v0.2.1 tag. The diagrams have not been compared against a running app.
