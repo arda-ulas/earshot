@@ -231,7 +231,35 @@ how.
   emulator), the docs say so instead.
 - **Verified:** each regression test drives the scenario named in the review (input text, signal
   timeline or call sequence) through the real classes, with fakes only at the edges; `:core`, `:vehicle:car` and the manifest-check tests green locally; the Automotive rows re-run on
-  the emulator after the second round. The final re-review result is recorded in the release notes.
+  the emulator after the second round. Later review rounds (re-audits 3 to 8 in the commit log) found
+  and fixed more; their reports are not kept in this repository, and none of them was a final clean
+  pass. The final audit is the next entry.
+
+### Final static audit of v0.3.0 (sub-agent, 2026-10-23)
+- **Asked:** one last read-only hostile audit of branch `fix/audit-p1` at `239340b`, using the v0.2.1
+  audit as the baseline: decide from the code whether each of the 15 original P1s is fixed, look for
+  new P1s (the whole-sentence allowlist `CommandGrammar` first, as it was the newest change), and
+  separate undisclosed problems from the gaps listed in `docs/safety.md`.
+- **Produced:** a report by a Claude Opus 5.5 sub-agent. Verdict: no open P1. All 15 original P1s are
+  fixed when the code is read. Six P2: (1) the changelog said every P1 has a regression test, which is
+  false for the app-layer fixes; (2) the only test for cancellation arriving before the native call
+  sets the abort flag itself, so it would pass with the original bug; (3) the README said two
+  independent readings must agree, but both read the same normalised text; (4) ADR 0003 and the SR-18
+  wording are out of date, in the conservative direction; (5) on the car, a temperature such as
+  21.5 °C is rounded before "warmer" adds 1, so the cabin moves 1.5 °C; (6) the code that claims to
+  handle cancellation during model loading (re-audit N9) can never run. N9 itself is rated P2 and is
+  still open, as disclosed in `docs/safety.md`.
+- **Limits:** static, one pass, nothing executed. The auditor is a Claude model, so it is not
+  independent of the Claude-assisted build in the way the Codex review of v0.2.1 was. It could not say
+  whether Android accepts the `CommandGrammar` patterns, because the app had not been run since they
+  were added.
+- **Changed:** P2 (1) and (3) are corrected in `CHANGELOG.md` and `README.md` in the commit that adds
+  this entry. P2 (2), (4), (5) and (6) are not fixed yet.
+- **Verified:** I read the test and the model-loading code behind P2 (2) and (6) and agree with the
+  report. The read-only traceability check and the manifest fixture check passed in the audit run.
+  A smoke run of the same commit on the Android Automotive emulator (11 clips, parked and moving,
+  recorded in `docs/manual-test-plan.md`) showed the allowlist loading and matching on Android, so the
+  audit's open question about the grammar patterns is answered for those clips.
 
 ### Regression harness (workflow and agents)
 - **Asked:** build the Phase 2 harness: a CLI reusing `:core`, a labelled car test set with synthetic

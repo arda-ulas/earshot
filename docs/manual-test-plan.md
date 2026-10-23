@@ -171,6 +171,17 @@ restrictions the developer view shows only "Hidden while driving". A clip reques
 and one with no token, started no turn and changed nothing. The car API connected in the background
 at start-up as intended.
 
+Smoke run on 2026-10-23 at commit `239340b` (`clip`, Android Automotive 15 arm64 emulator, normal
+install, so climate stays simulated; speed and gear set with `scripts/aaos-scenario.sh`). This was the
+first run after `CommandGrammar` was added, and the grammar loaded and matched on Android. Parked:
+U1 (set 21, acted), U5 (22 after warmer, acted), "Don't make it warmer" (refused), "minus 21" (out of
+range, short reply), U6 (refused through the language model), U3 (0 km/h). In `city`: U2 (acted,
+voice only), U9 then yes 7.9 s later (question, acted), U4 (refused while moving, short spoken
+summary), U3 (50 km/h). Every result was as expected. This is a spot check of 11 clips, not the whole
+table. The first start-up needed the car-speed permission dialog answered (granted with `pm grant`
+for the debug build). A check that the app survives a state flip between a question and its answer
+was not run.
+
 Capture path check on 2026-10-01 (same emulator, host audio input, nobody speaking, so this is not a
 `mic` voice result): the push-to-talk button was held by an injected touch for 2.5 s and for 0.9 s.
 Both captures reached the turn engine as `MIC` turns with an empty transcript and were answered with

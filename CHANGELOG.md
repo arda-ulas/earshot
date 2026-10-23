@@ -15,7 +15,11 @@ test clips unless stated otherwise. Nothing here has run in a vehicle.
 - Manual test plan rows A-1 to A-11 on the Automotive emulator (`clip` input): 10 pass, signal loss
   not reproducible with the image's hooks. The phone path is unchanged.
 - An external hostile review of v0.2.1 found 15 P1 and 8 P2 issues, and a re-review of the first fixes
-  found more. Each P1 has a regression test. Main changes:
+  found more. The P1 fixes in `:core` and `:vehicle:car` have regression tests; the fixes in the app
+  layer (capture, microphone lifecycle, offline speech, teardown, removing parked output when the car
+  moves) are checked only by the manual test plan, on clips (see Known gaps in `docs/safety.md`).
+  A final read-only static audit of this release (2026-10-23, a Claude Opus 5.5 sub-agent, one pass,
+  nothing executed) found no open P1 and six P2, and is described in `docs/ai-log.md`. Main changes:
   - Only a complete listed sentence may act: a command found by the keyword rules must also match an
     allowlist of whole-utterance patterns (`CommandGrammar`) that gives the same command. Deferrals,
     conditions, cut-off tails, stray words and other nouns ("turn down the AC by 2") are refused
