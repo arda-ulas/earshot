@@ -22,6 +22,8 @@ dependencyResolutionManagement {
 
 rootProject.name = "earshot"
 include(":core")
+include(":harness")
 include(":native:whisper")
 include(":native:llama")
+include(":vehicle:car")
 include(":app")

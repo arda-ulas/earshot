@@ -120,6 +120,22 @@ class FaultInjectingGateway(
     val readOverride: MutableMap<ClimateProperty, Int> = mutableMapOf()
     var signalsOverride: SignalSample? = null
 
+    /** Virtual-time delay on every read (a slow gateway), and a hook that runs during each read. */
+    var readDelayMs = 0L
+    var onRead: (() -> Unit)? = null
+
+    /**
+     * A write queued behind another call: it waits this long even if its caller gives up, then checks
+     * the guard, as a car worker does.
+     */
+    var queuedWriteDelayMs = 0L
+
+    /** What the guard said when the queued write reached it. */
+    var queuedGuardResult: Boolean? = null
+
+    /** Runs when a write reaches the gateway, before the delegate's own checks (a queued write). */
+    var onWrite: (() -> Unit)? = null
+
     var writeCount = 0
         private set
     var readCount = 0
@@ -129,6 +145,8 @@ class FaultInjectingGateway(
 
     override suspend fun read(property: ClimateProperty): ReadResult {
         readCount++
+        onRead?.invoke()
+        if (readDelayMs > 0) delay(readDelayMs)
         if (forceUnavailable) return ReadResult.Unavailable
         readOverride[property]?.let { return ReadResult.Value(it) }
         return delegate.read(property)
@@ -137,6 +155,8 @@ class FaultInjectingGateway(
     override suspend fun write(
         property: ClimateProperty,
         value: Int,
+        notAfterMs: Long,
+        guard: () -> Boolean,
     ): WriteResult {
         writeCount++
         return when {
@@ -153,8 +173,15 @@ class FaultInjectingGateway(
                 error("unreachable")
             }
 
+            queuedWriteDelayMs > 0 -> {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { delay(queuedWriteDelayMs) }
+                queuedGuardResult = guard()
+                if (queuedGuardResult == true) delegate.write(property, value, notAfterMs) else WriteResult.Aborted
+            }
+
             else -> {
-                delegate.write(property, value)
+                onWrite?.invoke()
+                delegate.write(property, value, notAfterMs, guard)
             }
         }
     }
@@ -170,7 +197,11 @@ class FaultInjectingGateway(
 class RecordingTraceSink : TraceSink {
     val traces = mutableListOf<TurnTrace>()
 
+    /** When true, every write throws, like a full disk. */
+    var fail = false
+
     override fun write(trace: TurnTrace) {
+        if (fail) throw java.io.IOException("disk full")
         traces += trace
     }
 }

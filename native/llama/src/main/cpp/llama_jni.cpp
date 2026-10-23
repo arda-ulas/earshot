@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <new>
 #include <string>
 #include <vector>
 
@@ -28,7 +29,9 @@ struct Handle {
 bool abort_requested(void *data) { return static_cast<Handle *>(data)->abort.load(); }
 
 std::string to_string(JNIEnv *env, jstring s) {
+    if (s == nullptr) return std::string();
     const char *c = env->GetStringUTFChars(s, nullptr);
+    if (c == nullptr) return std::string();  // OutOfMemoryError pending; the call then fails cleanly
     std::string out(c);
     env->ReleaseStringUTFChars(s, c);
     return out;
@@ -61,7 +64,9 @@ Java_io_github_ardaulas_earshot_llama_LlamaNative_load(JNIEnv *env, jclass, jstr
     llama_backend_init();
     llama_model_params mparams = llama_model_default_params();
     mparams.n_gpu_layers = 0;
-    llama_model *model = llama_model_load_from_file(to_string(env, path).c_str(), mparams);
+    const std::string model_path = to_string(env, path);
+    if (env->ExceptionCheck() || model_path.empty()) return 0;
+    llama_model *model = llama_model_load_from_file(model_path.c_str(), mparams);
     if (model == nullptr) return 0;
 
     llama_context_params cparams = llama_context_default_params();
@@ -75,7 +80,12 @@ Java_io_github_ardaulas_earshot_llama_LlamaNative_load(JNIEnv *env, jclass, jstr
         llama_model_free(model);
         return 0;
     }
-    auto *h = new Handle();
+    auto *h = new (std::nothrow) Handle();
+    if (h == nullptr) {
+        llama_free(ctx);
+        llama_model_free(model);
+        return 0;
+    }
     h->model = model;
     h->ctx = ctx;
     h->vocab = llama_model_get_vocab(model);
@@ -90,6 +100,12 @@ Java_io_github_ardaulas_earshot_llama_LlamaNative_free(JNIEnv *, jclass, jlong p
     llama_free(h->ctx);
     llama_model_free(h->model);
     delete h;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_io_github_ardaulas_earshot_llama_LlamaNative_resetAbort(JNIEnv *, jclass, jlong ptr) {
+    auto *h = reinterpret_cast<Handle *>(ptr);
+    if (h != nullptr) h->abort.store(false);
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -136,10 +152,12 @@ Java_io_github_ardaulas_earshot_llama_LlamaNative_generate(
         JNIEnv *env, jclass, jlong ptr, jstring jprefix, jstring jsuffix, jstring jgrammar, jint max_tokens) {
     auto *h = reinterpret_cast<Handle *>(ptr);
     if (h == nullptr) return nullptr;
-    h->abort.store(false);
+    // The abort flag is reset by the caller (resetAbort) before the call is published, never here.
+    if (h->abort.load()) return nullptr;
     const std::string prefix = to_string(env, jprefix);
     const std::string suffix = to_string(env, jsuffix);
     const std::string grammar = to_string(env, jgrammar);
+    if (env->ExceptionCheck()) return nullptr;
     llama_memory_t mem = llama_get_memory(h->ctx);
 
     if (!(prefix == h->prefix && h->n_prefix > 0)) {

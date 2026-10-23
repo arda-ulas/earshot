@@ -1,0 +1,159 @@
+{
+    "schema": 2,
+    "suite": "car",
+    "clips": 252,
+    "labelsFile": "labels.jsonl",
+    "labelsSha256": "612c71a922ab3f18196ece930c053e7ac9c33eda63aa8c4fc387503d1a53cfae",
+    "werNormaliser": "harness-wer-1",
+    "thresholds": {
+        "confidence": 0.5,
+        "maxIntentDropPoints": 2.0,
+        "maxWerRisePoints": 3.0
+    },
+    "host": "Mac OS X 26.4 aarch64, Apple M1, 8 logical cores, no host engine (text only); Mac OS X 26.4 aarch64, Apple M1, 8 logical cores, 2 engine threads",
+    "code": [
+        {
+            "commit": "dd701cd3d72f1043881c971af5d5aa2e92afac49",
+            "dirty": true,
+            "trees": {
+                "core/src/main": "73b8ee41aa9e04578f67b4dd65edca811f3414ec",
+                "harness/src/main": "555087491277cb4f6c9e67a64de85c73d34ef8c6",
+                "testset/car": "39f79e799eab3db28f489761da096bf4e2d064ca"
+            }
+        }
+    ],
+    "groups": [
+        {
+            "engine": "reference",
+            "lm": "none",
+            "condition": "text",
+            "wer": 0.0,
+            "intentAccuracy": 1.0,
+            "slotAccuracy": 1.0,
+            "policyCorrectness": 1.0,
+            "falseActionRate": 0.0,
+            "clips": 252
+        },
+        {
+            "engine": "reference",
+            "lm": "qwen3",
+            "condition": "text",
+            "wer": 0.0,
+            "intentAccuracy": 0.9841269841269841,
+            "slotAccuracy": 0.9841269841269841,
+            "policyCorrectness": 1.0,
+            "falseActionRate": 0.0,
+            "clips": 252
+        },
+        {
+            "engine": "whisper",
+            "lm": "qwen3",
+            "condition": "clean",
+            "wer": 0.07552083333333333,
+            "intentAccuracy": 0.9246031746031746,
+            "slotAccuracy": 0.9126984126984127,
+            "policyCorrectness": 1.0,
+            "falseActionRate": 0.0,
+            "clips": 252
+        },
+        {
+            "engine": "whisper",
+            "lm": "qwen3",
+            "condition": "pink@20dB",
+            "wer": 0.09461805555555555,
+            "intentAccuracy": 0.9246031746031746,
+            "slotAccuracy": 0.8968253968253969,
+            "policyCorrectness": 1.0,
+            "falseActionRate": 0.0,
+            "clips": 252
+        },
+        {
+            "engine": "whisper",
+            "lm": "qwen3",
+            "condition": "brown@20dB",
+            "wer": 0.0625,
+            "intentAccuracy": 0.9444444444444444,
+            "slotAccuracy": 0.9325396825396826,
+            "policyCorrectness": 1.0,
+            "falseActionRate": 0.0,
+            "clips": 252
+        },
+        {
+            "engine": "whisper",
+            "lm": "qwen3",
+            "condition": "fan@20dB",
+            "wer": 0.0763888888888889,
+            "intentAccuracy": 0.9246031746031746,
+            "slotAccuracy": 0.9087301587301587,
+            "policyCorrectness": 1.0,
+            "falseActionRate": 0.0,
+            "clips": 252
+        },
+        {
+            "engine": "whisper",
+            "lm": "qwen3",
+            "condition": "pink@10dB",
+            "wer": 0.1328125,
+            "intentAccuracy": 0.8531746031746031,
+            "slotAccuracy": 0.8214285714285714,
+            "policyCorrectness": 1.0,
+            "falseActionRate": 0.0,
+            "clips": 252
+        },
+        {
+            "engine": "whisper",
+            "lm": "qwen3",
+            "condition": "brown@10dB",
+            "wer": 0.0685763888888889,
+            "intentAccuracy": 0.9365079365079365,
+            "slotAccuracy": 0.9087301587301587,
+            "policyCorrectness": 1.0,
+            "falseActionRate": 0.0,
+            "clips": 252
+        },
+        {
+            "engine": "whisper",
+            "lm": "qwen3",
+            "condition": "fan@10dB",
+            "wer": 0.12413194444444445,
+            "intentAccuracy": 0.8571428571428571,
+            "slotAccuracy": 0.8333333333333334,
+            "policyCorrectness": 1.0,
+            "falseActionRate": 0.0,
+            "clips": 252
+        },
+        {
+            "engine": "whisper",
+            "lm": "qwen3",
+            "condition": "pink@5dB",
+            "wer": 0.2248263888888889,
+            "intentAccuracy": 0.753968253968254,
+            "slotAccuracy": 0.6706349206349206,
+            "policyCorrectness": 1.0,
+            "falseActionRate": 0.0,
+            "clips": 252
+        },
+        {
+            "engine": "whisper",
+            "lm": "qwen3",
+            "condition": "brown@5dB",
+            "wer": 0.08246527777777778,
+            "intentAccuracy": 0.9087301587301587,
+            "slotAccuracy": 0.8928571428571429,
+            "policyCorrectness": 1.0,
+            "falseActionRate": 0.0,
+            "clips": 252
+        },
+        {
+            "engine": "whisper",
+            "lm": "qwen3",
+            "condition": "fan@5dB",
+            "wer": 0.19618055555555555,
+            "intentAccuracy": 0.7976190476190477,
+            "slotAccuracy": 0.7380952380952381,
+            "policyCorrectness": 1.0,
+            "falseActionRate": 0.0,
+            "clips": 252
+        }
+    ]
+}

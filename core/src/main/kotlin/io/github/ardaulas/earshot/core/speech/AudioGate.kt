@@ -29,10 +29,30 @@ object AudioGate {
         return if (pcm.size <= max) pcm else pcm.copyOf(max)
     }
 
-    private val NON_SPEECH = Regex("""\[[^\]]*]|\([^)]*\)|\*[^*]*\*""")
+    private val DELIMITED = Regex("""\[([^\]]*)]|\(([^)]*)\)|\*([^*]*)\*""")
 
-    /** Removes non-speech tags; returns the cleaned text and whether anything spoken is left. */
-    fun clean(text: String): String = NON_SPEECH.replace(text, " ").replace(Regex("""\s+"""), " ").trim()
+    /** Whisper's own non-speech annotations. Anything else in brackets may be words and is kept. */
+    private val NON_SPEECH_TAG =
+        Regex(
+            """^\s*(blank_audio|silence|music|noise|applause|laughter|laughs|static|wind|beep|coughs?|sighs?|""" +
+                """(soft |upbeat |dramatic |gentle )?music( playing)?|no speech|""" +
+                """wind blowing|birds chirping|engine running|engine revving|phone ringing|horn honking|car horn|typing|clicking)\s*$""",
+            RegexOption.IGNORE_CASE,
+        )
+
+    /**
+     * Removes whisper's known non-speech tags ("[BLANK_AUDIO]", "(music)"). Other delimited text is
+     * kept as words, so "(no, cancel that)" is never erased before the rules see it (re-audit 4, N18).
+     * Tags for speech that was not understood ("[inaudible]", "(speaking in foreign language)") are
+     * kept too: something was said, so the request is not complete (re-audit 5, N18).
+     */
+    fun clean(text: String): String =
+        DELIMITED
+            .replace(text) { m ->
+                val inner = m.groupValues.drop(1).firstOrNull { it.isNotEmpty() } ?: ""
+                if (inner.isBlank() || NON_SPEECH_TAG.matches(inner)) " " else " $inner "
+            }.replace(Regex("""\s+"""), " ")
+            .trim()
 
     /** Applies the gate around an engine's raw result. */
     fun transcript(

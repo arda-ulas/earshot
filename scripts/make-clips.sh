@@ -39,6 +39,8 @@ clip ac-on                 "Turn on the AC"
 clip what-gear             "What gear am I in?"
 clip temp-35               "Set the temperature to 35"
 clip help                  "What can you do?"
+clip neg-warmer            "Don't make it warmer"
+clip temp-minus-21         "Set the temperature to minus 21"
 
 # U7: unclear audio. Near-silence (below the audio gate) and a fast whispered mumble.
 python3 - "$out/u7-near-silence.wav" <<'PY'

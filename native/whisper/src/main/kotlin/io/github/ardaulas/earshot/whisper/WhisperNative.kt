@@ -13,6 +13,8 @@ internal object WhisperNative {
 
     @JvmStatic external fun abort(handle: Long)
 
+    @JvmStatic external fun resetAbort(handle: Long)
+
     @JvmStatic external fun transcribe(
         handle: Long,
         pcm16k: FloatArray,

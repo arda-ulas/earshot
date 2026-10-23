@@ -20,6 +20,7 @@ object Responses {
     const val CONFIRMATION_EXPIRED = "That request timed out. Please ask again."
     const val DECLINED = "Okay, I won't."
     const val STALE = "That took too long, so I didn't do it."
+    const val STATE_CHANGED = "Driving changed, so I didn't do that. Please ask again."
     const val CONTROLS_UNAVAILABLE = "Vehicle controls are unavailable."
     const val SPEED_UNAVAILABLE = "Speed isn't available right now."
     const val GEAR_UNAVAILABLE = "Gear isn't available right now."
@@ -36,6 +37,14 @@ object Responses {
     ) = "I can only set the $what from ${range.first} to ${range.last}."
 
     fun writeFailed(command: Command) = "I couldn't change the ${subject(command)}."
+
+    fun writePartial(command: Command) = "Only part of the ${subject(command)} changed. Please check it."
+
+    fun writeUnconfirmed(command: Command) = "I couldn't confirm the change to the ${subject(command)}. Please check it."
+
+    /** At most 12 words, so it is spoken while moving too (re-audit 6, N28). */
+    fun temperatureOutsideRange(celsius: Int) =
+        "It's $celsius degrees, outside ${Bounds.TEMP_C.first} to ${Bounds.TEMP_C.last}. Say a temperature."
 
     fun confirmQuestion(command: Command): String = "${describe(command)}? Say yes or no."
 

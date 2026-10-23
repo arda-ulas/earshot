@@ -23,32 +23,43 @@ sealed interface AssistantStatus {
  * rules keep working.
  */
 object ModelGate {
+    /**
+     * With [privateDir] set (the app does this), models are loaded only from a verified snapshot in
+     * app-private storage, which no other app can write, so the bytes that were checked are the bytes
+     * that are loaded (audit #15). The shared [dir] is only a place to copy from.
+     */
     fun check(
         manifest: ModelManifest,
         dir: File,
+        privateDir: File? = null,
         verify: (ModelSpec, File) -> ModelCheck = ModelVerifier::verify,
     ): AssistantStatus {
-        val sttSpecs = manifest.models.filter { it.role == "stt" }
-        val sttChecks = sttSpecs.map { it to verify(it, File(dir, it.file)) }
+        fun resolve(spec: ModelSpec): Pair<File, ModelCheck> =
+            if (privateDir == null) {
+                File(dir, spec.file).let { it to verify(spec, it) }
+            } else {
+                ModelStore.snapshot(spec, dir, privateDir, verify)
+            }
+        val sttChecks = manifest.models.filter { it.role == "stt" }.map { spec -> spec to resolve(spec) }
         val stt =
-            sttChecks.firstOrNull { it.second.isOk }?.first
+            sttChecks.firstOrNull { it.second.second.isOk }
                 ?: return AssistantStatus.Disabled(
                     if (sttChecks.isEmpty()) {
                         "No speech model is listed in the manifest."
                     } else {
-                        "Speech model ${sttChecks.first().first.file}: ${describe(sttChecks.first().second)}"
+                        "Speech model ${sttChecks.first().first.file}: ${describe(sttChecks.first().second.second)}"
                     },
                 )
         val lmSpec = manifest.models.firstOrNull { it.role == "lm" }
-        val lmCheck = lmSpec?.let { verify(it, File(dir, it.file)) }
+        val lm = lmSpec?.let(::resolve)
         return AssistantStatus.Ready(
-            stt = File(dir, stt.file),
-            lm = if (lmSpec != null && lmCheck?.isOk == true) File(dir, lmSpec.file) else null,
+            stt = stt.second.first,
+            lm = if (lm?.second?.isOk == true) lm.first else null,
             lmProblem =
                 when {
                     lmSpec == null -> "No language model is listed in the manifest."
-                    lmCheck?.isOk == true -> null
-                    else -> "Language model ${lmSpec.file}: ${describe(lmCheck!!)}"
+                    lm?.second?.isOk == true -> null
+                    else -> "Language model ${lmSpec.file}: ${describe(lm!!.second)}"
                 },
         )
     }
